@@ -278,8 +278,8 @@ export default class hibachi extends Exchange {
      * @returns {object} an associative dictionary of currencies
      */
     async fetchCurrencies (params = {}): Promise<Currencies> {
-        // Hibachi only support USDT on Arbitrum at this time
-        // We don't have an API endpoit to expose this information yet
+        // Hibachi only supports USDT on Arbitrum at this time
+        // We don't have an API endpoint to expose this information yet
         const result: Dict = {};
         const networks: Dict = {};
         const networkId = 'ARBITRUM';
