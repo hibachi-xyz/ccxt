@@ -14,6 +14,9 @@ async function example () {
 
     const balance = await exchange.fetchBalance();
     console.dir (balance, { depth: null, colors: true });
-    
+
+    // In order to run this, please change it to a valid order ID
+    // const cancelOrder = await exchange.cancelOrder('111111111111111111');
+    // console.dir (cancelOrder, { depth: null, colors: true });
 }
 example ();

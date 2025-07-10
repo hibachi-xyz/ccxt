@@ -4,6 +4,9 @@
 import Exchange from './abstract/hibachi.js';
 import { TICK_SIZE } from './base/functions/number.js';
 import type { Balances, Currencies, Dict, Market, Str } from './base/types.js';
+import { ecdsa } from './base/functions/crypto.js';
+import { sha256 } from './static_dependencies/noble-hashes/sha256.js';
+import { secp256k1 } from './static_dependencies/noble-curves/secp256k1.js';
 
 // ---------------------------------------------------------------------------
 
@@ -32,7 +35,7 @@ export default class hibachi extends Exchange {
                 'option': false,
                 'addMargin': false,
                 'cancelAllOrders': false,
-                'cancelOrder': false,
+                'cancelOrder': true,
                 'cancelOrders': false,
                 'cancelWithdraw': false,
                 'closeAllPositions': false,
@@ -129,6 +132,9 @@ export default class hibachi extends Exchange {
                 'private': {
                     'get': {
                         'trade/account/info': 1,
+                    },
+                    'delete': {
+                        'trade/order': 1,
                     },
                 },
             },
@@ -377,18 +383,71 @@ export default class hibachi extends Exchange {
         return this.parseBalance (response);
     }
 
+    /**
+     * @method
+     * @name hibachi#cancelOrder
+     * @see https://api-doc.hibachi.xyz/#e99c4f48-e610-4b7c-b7f6-1b4bb7af0271
+     * @description cancels an open order
+     * @param {string} id order id
+     * @param {string} symbol is unused
+     * @param {object} [params] extra parameters specific to the exchange API endpoint
+     * @returns {object} An [order structure]{@link https://docs.ccxt.com/#/?id=order-structure}
+     */
+    async cancelOrder (id: string, symbol: Str = undefined, params = {}) {
+        this.checkRequiredCredentials ();
+        const message = this.base16ToBinary (this.intToBase16 (this.parseToInt (id)).padStart (16, '0'));
+        const signature = this.signMessage (message, this.privateKey);
+        const request: Dict = {
+            'accountId': this.accountId,
+            'orderId': id,
+            'signature': signature,
+        };
+        await this.privateDeleteTradeOrder (this.extend (request, params));
+        // At this time the response body is empty. A 200 response means the cancel request is accepted and sent to cancel
+        //
+        // {}
+        //
+        return this.safeOrder ({
+            'id': id,
+            'status': 'canceled',
+        });
+    }
+
+    hashMessage (message) {
+        return this.hash (message, sha256, 'hex');
+    }
+
+    signHash (hash, privateKey) {
+        // We only support ECDSA signature for trustless account for now
+        // TODO: add support for HMAC signature for exchange managed account
+        const signature = ecdsa (hash.slice (-64), privateKey.slice (-64), secp256k1, undefined);
+        const r = signature['r'];
+        const s = signature['s'];
+        const v = signature['v'];
+        return r.padStart (64, '0') + s.padStart (64, '0') + v.toString (16).padStart (2, '0');
+    }
+
+    signMessage (message, privateKey) {
+        return this.signHash (this.hashMessage (message), privateKey.slice (-64));
+    }
+
     sign (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {
-        const request = this.omit (params, this.extractParams (path));
         const endpoint = '/' + this.implodeParams (path, params);
         let url = this.urls['api'][api] + endpoint;
-        const query = this.urlencode (request);
-        if (query.length !== 0) {
-            url += '?' + query;
+        headers = {};
+        if (method === 'GET') {
+            const request = this.omit (params, this.extractParams (path));
+            const query = this.urlencode (request);
+            if (query.length !== 0) {
+                url += '?' + query;
+            }
+        }
+        if (method === 'DELETE') {
+            headers['content-type'] = 'application/json';
+            body = this.json (params);
         }
         if (api === 'private') {
-            headers = {
-                'Authorization': this.apiKey,
-            };
+            headers['Authorization'] = this.apiKey;
         }
         return { 'url': url, 'method': method, 'body': body, 'headers': headers };
     }
