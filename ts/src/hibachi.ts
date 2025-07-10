@@ -386,9 +386,9 @@ export default class hibachi extends Exchange {
         const high = this.safeFloat (stats, 'high24h');
         const low = this.safeFloat (stats, 'low24h');
         const volume = this.safeFloat (stats, 'volume24h');
-        prices['high24h'] = high;
-        prices['low24h'] = low;
-        prices['volume24h'] = volume;
+        prices['high24h'] = this.safeString (stats, 'high24h');
+        prices['low24h'] = this.safeString (stats, 'low24h');
+        prices['volume24h'] = this.safeString (stats, 'volume24h');
         return this.safeTicker ({
             'symbol': this.safeSymbol (undefined, market),
             'timestamp': undefined,
