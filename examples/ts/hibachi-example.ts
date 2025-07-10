@@ -9,5 +9,8 @@ async function example () {
 
     const currencies = await exchange.fetchCurrencies();
     console.dir (currencies, { depth: null, colors: true });
+
+    const trades = await exchange.fetchTrades("BTC/USDT:USDT");
+    console.log('fetchTrades', trades.length, trades[0]);
 }
 example ();
