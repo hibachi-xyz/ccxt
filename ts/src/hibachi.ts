@@ -3,7 +3,7 @@
 
 import Exchange from './abstract/hibachi.js';
 import { TICK_SIZE } from './base/functions/number.js';
-import type { Currencies, Dict, Market, Str, Trade, Int } from './base/types.js';
+import type { Balances, Currencies, Dict, Market, Str, Ticker, Trade, Int } from './base/types.js';
 
 // ---------------------------------------------------------------------------
 
@@ -55,7 +55,7 @@ export default class hibachi extends Exchange {
                 'createTrailingPercentOrder': false,
                 'createTriggerOrder': false,
                 'fetchAccounts': false,
-                'fetchBalance': false,
+                'fetchBalance': true,
                 'fetchCanceledOrders': false,
                 'fetchClosedOrder': false,
                 'fetchClosedOrders': false,
@@ -92,7 +92,7 @@ export default class hibachi extends Exchange {
                 'fetchPositions': false,
                 'fetchPremiumIndexOHLCV': false,
                 'fetchStatus': false,
-                'fetchTicker': false,
+                'fetchTicker': true,
                 'fetchTickers': false,
                 'fetchTime': false,
                 'fetchTrades': true,
@@ -125,9 +125,14 @@ export default class hibachi extends Exchange {
                     'get': {
                         'market/exchange-info': 1,
                         'market/data/trades': 1,
+                        'market/data/prices': 1,
+                        'market/data/stats': 1,
                     },
                 },
                 'private': {
+                    'get': {
+                        'trade/account/info': 1,
+                    },
                 },
             },
             'requiredCredentials': {
@@ -329,6 +334,86 @@ export default class hibachi extends Exchange {
         return result;
     }
 
+    parseBalance (response): Balances {
+        const result: Dict = {
+            'info': response,
+        };
+        // Hibachi only supports USDT on Arbitrum at this time
+        const code = this.safeCurrencyCode ('USDT');
+        const account = this.account ();
+        account['total'] = this.safeString (response, 'balance');
+        account['free'] = this.safeString (response, 'maximalWithdraw');
+        result[code] = account;
+        return this.safeBalance (result);
+    }
+
+    /**
+     * @method
+     * @name hibachi#fetchBalance
+     * @description query for balance and get the amount of funds available for trading or funds locked in orders
+     * @see https://api-doc.hibachi.xyz/#69aafedb-8274-4e21-bbaf-91dace8b8f31
+     * @param {object} [params] extra parameters specific to the exchange API endpoint
+     * @returns {object} a [balance structure]{@link https://docs.ccxt.com/#/?id=balance-structure}
+     */
+    async fetchBalance (params = {}): Promise<Balances> {
+        this.checkRequiredCredentials ();
+        const request: Dict = {
+            'accountId': this.accountId,
+        };
+        const response = await this.privateGetTradeAccountInfo (this.extend (request, params));
+        //
+        // {
+        //     assets: [ { quantity: '3.000000', symbol: 'USDT' } ],
+        //     balance: '3.000000',
+        //     maximalWithdraw: '3.000000',
+        //     numFreeTransfersRemaining: '100',
+        //     positions: [],
+        //     totalOrderNotional: '0.000000',
+        //     totalPositionNotional: '0.000000',
+        //     totalUnrealizedFundingPnl: '0.000000',
+        //     totalUnrealizedPnl: '0.000000',
+        //     totalUnrealizedTradingPnl: '0.000000',
+        //     tradeMakerFeeRate: '0.00000000',
+        //     tradeTakerFeeRate: '0.00020000'
+        // }
+        //
+        return this.parseBalance (response);
+    }
+
+    parseTicker (prices: Dict, stats: Dict, market: Market = undefined): Ticker {
+        const bid = this.safeFloat (prices, 'bidPrice');
+        const ask = this.safeFloat (prices, 'askPrice');
+        const last = this.safeFloat (prices, 'tradePrice');
+        const high = this.safeFloat (stats, 'high24h');
+        const low = this.safeFloat (stats, 'low24h');
+        const volume = this.safeFloat (stats, 'volume24h');
+        prices['high24h'] = this.safeString (stats, 'high24h');
+        prices['low24h'] = this.safeString (stats, 'low24h');
+        prices['volume24h'] = this.safeString (stats, 'volume24h');
+        return this.safeTicker ({
+            'symbol': this.safeSymbol (undefined, market),
+            'timestamp': undefined,
+            'datetime': undefined,
+            'bid': bid,
+            'ask': ask,
+            'last': last,
+            'high': high,
+            'low': low,
+            'bidVolume': undefined,
+            'askVolume': undefined,
+            'vwap': undefined,
+            'open': undefined,
+            'close': last,
+            'previousClose': undefined,
+            'change': undefined,
+            'percentage': undefined,
+            'average': undefined,
+            'baseVolume': undefined,
+            'quoteVolume': volume,
+            'info': prices,
+        }, market);
+    }
+
     parseTrade (trade: Dict, market: Market = undefined): Trade {
         // public fetchTrades:
         //      {
@@ -357,9 +442,7 @@ export default class hibachi extends Exchange {
             'cost': undefined,
             'takerOrMaker': 'taker',
             'fee': undefined,
-            'info': trade,
-        }, market);
-    }
+            'info': trade,})}
 
     /**
      * @method
@@ -394,17 +477,55 @@ export default class hibachi extends Exchange {
         const trades = this.safeList (response, 'trades', []);
         return this.parseTrades (trades, market);
     }
+    
+    /*
+     * @name hibachi#fetchTicker
+     * @see https://api-doc.hibachi.xyz/#4abb30c4-e5c7-4b0f-9ade-790111dbfa47
+     * @description fetches a price ticker and the related information for the past 24h
+     * @param {string} symbol unified symbol of the market
+     * @returns {object} a [ticker structure]{@link https://docs.ccxt.com/#/?id=ticker-structure}
+     */
+    async fetchTicker (symbol: Str): Promise<Ticker> {
+        await this.loadMarkets ();
+        const market = this.market (symbol);
+        const request: Dict = {
+            'symbol': market['id'],
+        };
+        const prices_response = await this.publicGetMarketDataPrices (this.extend (request));
+        // {
+        //     "askPrice": "3514.650296",
+        //     "bidPrice": "3513.596112",
+        //     "fundingRateEstimation": {
+        //         "estimatedFundingRate": "0.000001",
+        //         "nextFundingTimestamp": 1712707200
+        //     },
+        //     "markPrice": "3514.288858",
+        //     "spotPrice": "3514.715000",
+        //     "symbol": "ETH/USDT-P",
+        //     "tradePrice": "2372.746570"
+        // }
+        const stats_response = await this.publicGetMarketDataStats (this.extend (request));
+        // {
+        //     "high24h": "3819.507827",
+        //     "low24h": "3754.474162",
+        //     "symbol": "ETH/USDT-P",
+        //     "volume24h": "23554.858590416"
+        // }
+        return this.parseTicker (prices_response, stats_response, market);
+    }
 
     sign (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {
         const request = this.omit (params, this.extractParams (path));
         const endpoint = '/' + this.implodeParams (path, params);
         let url = this.urls['api'][api] + endpoint;
         const query = this.urlencode (request);
-        if (api === 'private') {
-            // TODO: add auth header with API key here
-            headers = this.extend (headers, {});
-        } else if (query.length !== 0) {
+        if (query.length !== 0) {
             url += '?' + query;
+        }
+        if (api === 'private') {
+            headers = {
+                'Authorization': this.apiKey,
+            };
         }
         return { 'url': url, 'method': method, 'body': body, 'headers': headers };
     }
