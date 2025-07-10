@@ -11,10 +11,10 @@ async function example () {
 
     const currencies = await exchange.fetchCurrencies();
     console.dir (currencies, { depth: null, colors: true });
-    
+
     const balance = await exchange.fetchBalance();
     console.dir (balance, { depth: null, colors: true });
-    
+
     const ticker = await exchange.fetchTicker('BTC/USDT:USDT');
     console.log ('fetchTicket', ticker);
     
