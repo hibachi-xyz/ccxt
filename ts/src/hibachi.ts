@@ -442,7 +442,9 @@ export default class hibachi extends Exchange {
             'cost': undefined,
             'takerOrMaker': 'taker',
             'fee': undefined,
-            'info': trade,})}
+            'info': trade,
+        }, market);
+    }
 
     /**
      * @method
@@ -477,8 +479,8 @@ export default class hibachi extends Exchange {
         const trades = this.safeList (response, 'trades', []);
         return this.parseTrades (trades, market);
     }
-    
-    /*
+
+    /**
      * @name hibachi#fetchTicker
      * @see https://api-doc.hibachi.xyz/#4abb30c4-e5c7-4b0f-9ade-790111dbfa47
      * @description fetches a price ticker and the related information for the past 24h
