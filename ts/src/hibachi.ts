@@ -451,54 +451,23 @@ export default class hibachi extends Exchange {
         return this.parseTicker (prices_response, stats_response, market);
     }
 
-    parseOrderbook (orderbook: Dict, symbol: string) {
-        const ask = this.safeDict (orderbook, 'ask');
-        const ask_levels = this.safeList (ask, 'levels');
-        let parsed_ask = [];
-        for ( let i = 0; i < ask_levels.length; i++) {
-            let level_dict = this.safeDict (ask_levels, i);
-            let price = this.safeNumber (level_dict, 'price');
-            let quantity = this.safeNumber (level_dict, 'quantity');
-            parsed_ask.push ([price, quantity]);
-        }
-
-        const bid = this.safeDict (orderbook, 'bid');
-        const bid_levels = this.safeList (bid, 'levels');
-        let parsed_bid = [];
-        for ( let i = 0; i < bid_levels.length; i++) {
-            let level_dict = this.safeDict (ask_levels, i);
-            let price = this.safeNumber (level_dict, 'price');
-            let quantity = this.safeNumber (level_dict, 'quantity');
-            parsed_bid.push ([price, quantity]);
-        }
-
-        return {
-            'symbol': symbol,
-            'asks': this.sortBy (parsed_ask, 0),
-            'bids': this.sortBy (parsed_bid, 0, true),
-            'timestamp': undefined,
-            'datetime': undefined,
-            'nonce': undefined,
-        };
-    }
-
     /**
      * @method
-     * @name hibachi@fetchOrderBook
+     * @name hibachi#fetchOrderBook
      * @description fetches the state of the open orders on the orderbook
      * @see https://api-doc.hibachi.xyz/#4abb30c4-e5c7-4b0f-9ade-790111dbfa47
-     * @param {string} symbol unified symbol of the market 
+     * @param {string} symbol unified symbol of the market
      * @param {int} [limit] currently unused
-     * @param {object} [params] extra parameters to be passed -- see documentation link above 
+     * @param {object} [params] extra parameters to be passed -- see documentation link above
+     * @returns {object} A dictionary containg [orderbook information]{@link https://docs.ccxt.com/#/?id=order-book-structure}
      */
-    async fetchOrderBook(symbol: string, limit: Int = undefined, params: {}): Promise<OrderBook> {
+    async fetchOrderBook (symbol: string, limit: Int = undefined, params = {}): Promise<OrderBook> {
         await this.loadMarkets ();
         const market: Market = this.market (symbol);
         const request: Dict = {
             'symbol': market['id'],
         };
-
-        const response = this.publicGetMarketDataOrderbook (this.extend(request, params));
+        const response = this.publicGetMarketDataOrderbook (this.extend (request, params));
         // {
         //     "ask": {
         //         "endPrice": "3512.63",
@@ -536,8 +505,8 @@ export default class hibachi extends Exchange {
         //         ],
         //         "startPrice": "3515.39"
         //     }
-        // } 
-        return this.parseOrderbook(response, symbol);
+        // }
+        return this.parseOrderBook (response, symbol, undefined, 'bid', 'ask', 'price', 'quantity');
     }
 
     sign (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {
