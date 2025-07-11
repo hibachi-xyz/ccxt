@@ -680,7 +680,7 @@ export default class hibachi extends Exchange {
         //   ]
         //
         return [
-            this.safeInteger (ohlcv, 'timestamp'),
+            this.safeInteger (ohlcv, 'timestamp') * 1000,
             this.safeNumber (ohlcv, 'open'),
             this.safeNumber (ohlcv, 'high'),
             this.safeNumber (ohlcv, 'low'),
