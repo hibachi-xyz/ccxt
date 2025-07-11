@@ -3,7 +3,7 @@
 
 import Exchange from './abstract/hibachi.js';
 import { TICK_SIZE } from './base/functions/number.js';
-import type { Balances, Currencies, Dict, Market, Str, Ticker, Trade, Int, Num, OrderSide, OrderType } from './base/types.js';
+import type { Balances, Currencies, Dict, Market, Str, Ticker, Trade, Int, Num, OrderSide, OrderType, OrderBook } from './base/types.js';
 import { ecdsa } from './base/functions/crypto.js';
 import { sha256 } from './static_dependencies/noble-hashes/sha256.js';
 import { secp256k1 } from './static_dependencies/noble-curves/secp256k1.js';
@@ -676,7 +676,10 @@ export default class hibachi extends Exchange {
         const request: Dict = {
             'symbol': market['id'],
         };
-        const response = this.publicGetMarketDataOrderbook (this.extend (request, params));
+        const response = await this.publicGetMarketDataOrderbook (this.extend (request, params));
+        const formatted_response = {};
+        formatted_response['ask'] = this.safeValue (this.safeValue (response, 'ask'), 'levels');
+        formatted_response['bid'] = this.safeValue (this.safeValue (response, 'bid'), 'levels');
         // {
         //     "ask": {
         //         "endPrice": "3512.63",
@@ -715,7 +718,7 @@ export default class hibachi extends Exchange {
         //         "startPrice": "3515.39"
         //     }
         // }
-        return this.parseOrderBook (response, symbol, undefined, 'bid', 'ask', 'price', 'quantity');
+        return this.parseOrderBook (formatted_response, symbol, undefined, 'bid', 'ask', 'price', 'quantity');
     }
 
     sign (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {
