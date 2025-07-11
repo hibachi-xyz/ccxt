@@ -3,7 +3,7 @@
 
 import Exchange from './abstract/hibachi.js';
 import { TICK_SIZE } from './base/functions/number.js';
-import type { Balances, Currencies, Dict, Market, Str, Ticker, Trade, Int } from './base/types.js';
+import type { Balances, Currencies, Dict, Market, Str, Ticker, Trade, OHLCV, Int } from './base/types.js';
 
 // ---------------------------------------------------------------------------
 
@@ -79,7 +79,7 @@ export default class hibachi extends Exchange {
                 'fetchMarkets': true,
                 'fetchMarkOHLCV': false,
                 'fetchMyTrades': false,
-                'fetchOHLCV': false,
+                'fetchOHLCV': true,
                 'fetchOpenInterestHistory': false,
                 'fetchOpenOrder': false,
                 'fetchOpenOrders': false,
@@ -127,6 +127,7 @@ export default class hibachi extends Exchange {
                         'market/data/trades': 1,
                         'market/data/prices': 1,
                         'market/data/stats': 1,
+                        'market/data/klines': 1,
                     },
                 },
                 'private': {
@@ -515,6 +516,77 @@ export default class hibachi extends Exchange {
         //     "volume24h": "23554.858590416"
         // }
         return this.parseTicker (prices_response, stats_response, market);
+    }
+
+    parseOHLCV (ohlcv, market: Market = undefined): OHLCV {
+        //
+        // [
+        //     {
+        //       "close": "3704.751036",
+        //       "high": "3716.530378",
+        //       "interval": "1h",
+        //       "low": "3699.627883",
+        //       "open": "3716.406894",
+        //       "timestamp": 1712628000,
+        //       "volumeNotional": "1637355.846362"
+        //     }
+        //   ]
+        //
+        return [
+            this.safeInteger (ohlcv, 'timestamp'),
+            this.safeNumber (ohlcv, 'open'),
+            this.safeNumber (ohlcv, 'high'),
+            this.safeNumber (ohlcv, 'low'),
+            this.safeNumber (ohlcv, 'close'),
+            this.safeNumber (ohlcv, 'volumeNotional'),
+        ];
+    }
+
+    /**
+     * @method
+     * @name hibachi#fetchOHLCV
+     * @see  https://api-doc.hibachi.xyz/#4f0eacec-c61e-4d51-afb3-23c51c2c6bac
+     * @description fetches historical candlestick data containing the close, high, low, open prices, interval and the volumeNotional
+     * @param {string} symbol unified symbol of the market to fetch OHLCV data for
+     * @param {string} timeframe the length of time each candle represents
+     * @param {int} [since] timestamp in ms of the earliest candle to fetch
+     * @param {int} [limit] the maximum amount of candles to fetch
+     * @param {object} [params] extra parameters specific to the exchange API endpoint
+     * @param {int} [params.toMs] timestamp in ms of the latest candle to fetch
+     * @returns {int[][]} A list of candles ordered as timestamp, open, high, low, close, volume
+     */
+    async fetchOHLCV (symbol: string, timeframe = '1m', since: Int = undefined, limit: Int = undefined, params = {}): Promise<OHLCV[]> {
+        await this.loadMarkets ();
+        const market = this.market (symbol);
+        timeframe = this.safeString (this.timeframes, timeframe, timeframe);
+        const request: Dict = {
+            'symbol': market['id'],
+            'interval': timeframe,
+        };
+        if (since !== undefined) {
+            request['fromMs'] = since;
+        }
+        let until: Int = undefined;
+        [ until, params ] = this.handleOptionAndParams (params, 'fetchOHLCV', 'until');
+        if (until !== undefined) {
+            request['toMs'] = until;
+        }
+        const response = await this.publicGetMarketDataKlines (this.extend (request, params));
+        //
+        // [
+        //     {
+        //       "close": "3704.751036",
+        //       "high": "3716.530378",
+        //       "interval": "1h",
+        //       "low": "3699.627883",
+        //       "open": "3716.406894",
+        //       "timestamp": 1712628000,
+        //       "volumeNotional": "1637355.846362"
+        //     }
+        //   ]
+        //
+        const klines = this.safeList (response, 'klines', []);
+        return this.parseOHLCVs (klines, market, timeframe, since, limit);
     }
 
     sign (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {
