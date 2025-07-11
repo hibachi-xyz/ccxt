@@ -19,6 +19,7 @@ async function example () {
 
     const ticker = await exchange.fetchTicker('BTC/USDT:USDT');
     console.log ('fetchTicket', ticker);
-    
+    const ohlcv = await exchange.fetchOHLCV('BTC/USDT:USDT');
+    console.log ('fetchOHLCV', ohlcv.length, ohlcv[0]);
 }
 example ();
