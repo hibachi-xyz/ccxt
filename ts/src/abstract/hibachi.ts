@@ -15,6 +15,8 @@ interface Exchange {
     publicGetMarketDataStats (params?: {}): Promise<implicitReturnType>;
     publicGetMarketDataKlines (params?: {}): Promise<implicitReturnType>;
     privateGetTradeAccountInfo (params?: {}): Promise<implicitReturnType>;
+    privateDeleteTradeOrder (params?: {}): Promise<implicitReturnType>;
+    privatePostTradeOrder (params?: {}): Promise<implicitReturnType>;
 }
 abstract class Exchange extends _Exchange {}
 

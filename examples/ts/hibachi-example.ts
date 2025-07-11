@@ -14,6 +14,7 @@ async function example () {
 
     const trades = await exchange.fetchTrades("BTC/USDT:USDT");
     console.log('fetchTrades', trades.length, trades[0]);
+
     const balance = await exchange.fetchBalance();
     console.dir (balance, { depth: null, colors: true });
 
@@ -21,5 +22,14 @@ async function example () {
     console.log ('fetchTicket', ticker);
     const ohlcv = await exchange.fetchOHLCV('BTC/USDT:USDT');
     console.log ('fetchOHLCV', ohlcv.length, ohlcv[0]);
+
+    // createOrder and cancelOrder
+    const order1 = await exchange.createOrder('BTC/USDT:USDT', 'market', 'buy', 0.00002);
+    const order2 = await exchange.createOrder('BTC/USDT:USDT', 'market', 'sell', 0.00002);
+    console.log('create market order', order1.id, order2.id);
+    const order3 = await exchange.createOrder('ETH/USDT:USDT', 'limit', 'buy', 1.234, 1.234);
+    const order4 = await exchange.cancelOrder(order3.id);
+    console.log('create and cancel limit order', order3.id, order4.id);
+    
 }
 example ();
