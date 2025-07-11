@@ -3,7 +3,10 @@
 
 import Exchange from './abstract/hibachi.js';
 import { TICK_SIZE } from './base/functions/number.js';
-import type { Balances, Currencies, Dict, Int, Market, OrderBook, Str, Ticker } from './base/types.js';
+import type { Balances, Currencies, Dict, Market, Str, Ticker, Trade, Int, Num, OrderSide, OrderType } from './base/types.js';
+import { ecdsa } from './base/functions/crypto.js';
+import { sha256 } from './static_dependencies/noble-hashes/sha256.js';
+import { secp256k1 } from './static_dependencies/noble-curves/secp256k1.js';
 
 // ---------------------------------------------------------------------------
 
@@ -32,7 +35,7 @@ export default class hibachi extends Exchange {
                 'option': false,
                 'addMargin': false,
                 'cancelAllOrders': false,
-                'cancelOrder': false,
+                'cancelOrder': true,
                 'cancelOrders': false,
                 'cancelWithdraw': false,
                 'closeAllPositions': false,
@@ -43,7 +46,7 @@ export default class hibachi extends Exchange {
                 'createMarketOrder': false,
                 'createMarketOrderWithCost': false,
                 'createMarketSellOrderWithCost': false,
-                'createOrder': false,
+                'createOrder': true,
                 'createOrderWithTakeProfitAndStopLoss': false,
                 'createReduceOnlyOrder': false,
                 'createStopLimitOrder': false,
@@ -95,7 +98,7 @@ export default class hibachi extends Exchange {
                 'fetchTicker': true,
                 'fetchTickers': false,
                 'fetchTime': false,
-                'fetchTrades': false,
+                'fetchTrades': true,
                 'fetchTradingFee': false,
                 'fetchTradingFees': false,
                 'fetchTransactions': 'emulated',
@@ -124,6 +127,7 @@ export default class hibachi extends Exchange {
                 'public': {
                     'get': {
                         'market/exchange-info': 1,
+                        'market/data/trades': 1,
                         'market/data/prices': 1,
                         'market/data/stats': 1,
                         'market/data/orderbook': 1,
@@ -132,6 +136,12 @@ export default class hibachi extends Exchange {
                 'private': {
                     'get': {
                         'trade/account/info': 1,
+                    },
+                    'delete': {
+                        'trade/order': 1,
+                    },
+                    'post': {
+                        'trade/order': 1,
                     },
                 },
             },
@@ -182,6 +192,8 @@ export default class hibachi extends Exchange {
         const settleId: Str = this.safeString (market, 'settlementSymbol');
         const settle: Str = this.safeCurrencyCode (settleId);
         const symbol = base + '/' + quote + ':' + settle;
+        const underlyingDecimals = this.safeNumber (market, 'underlyingDecimals');
+        const settlementDecimals = this.safeNumber (market, 'settlementDecimals');
         return {
             'id': marketId,
             'numericId': numericId,
@@ -208,8 +220,8 @@ export default class hibachi extends Exchange {
             'strike': undefined,
             'optionType': undefined,
             'precision': {
-                'amount': this.safeNumber (market, 'minOrderSize'),
-                'price': undefined,
+                'amount': 10 ** (-underlyingDecimals),
+                'price': 10 ** (underlyingDecimals - settlementDecimals) / (2 ** 32),
             },
             'limits': {
                 'leverage': {
@@ -380,16 +392,15 @@ export default class hibachi extends Exchange {
         return this.parseBalance (response);
     }
 
-    parseTicker (prices: Dict, stats: Dict, market: Market = undefined): Ticker {
+    parseTicker (ticker: Dict, market: Market = undefined): Ticker {
+        const prices = this.safeDict (ticker, 'prices');
+        const stats = this.safeDict (ticker, 'stats');
         const bid = this.safeFloat (prices, 'bidPrice');
         const ask = this.safeFloat (prices, 'askPrice');
         const last = this.safeFloat (prices, 'tradePrice');
         const high = this.safeFloat (stats, 'high24h');
         const low = this.safeFloat (stats, 'low24h');
         const volume = this.safeFloat (stats, 'volume24h');
-        prices['high24h'] = this.safeString (stats, 'high24h');
-        prices['low24h'] = this.safeString (stats, 'low24h');
-        prices['volume24h'] = this.safeString (stats, 'volume24h');
         return this.safeTicker ({
             'symbol': this.safeSymbol (undefined, market),
             'timestamp': undefined,
@@ -410,8 +421,74 @@ export default class hibachi extends Exchange {
             'average': undefined,
             'baseVolume': undefined,
             'quoteVolume': volume,
-            'info': prices,
+            'info': ticker,
         }, market);
+    }
+
+    parseTrade (trade: Dict, market: Market = undefined): Trade {
+        // public fetchTrades:
+        //      {
+        //          "price": "3512.431902",
+        //          "quantity": "1.414780098",
+        //          "takerSide": "Buy",
+        //          "timestamp": 1712692147
+        //      }
+        const timestamp = this.safeTimestamp (trade, 'timestamp'); // in seconds
+        const price = this.safeString (trade, 'price');
+        const amount = this.safeString (trade, 'quantity');
+        let side = this.safeString (trade, 'takerSide');
+        if (side !== undefined) {
+            side = side.toLowerCase ();
+        }
+        return this.safeTrade ({
+            'id': undefined,
+            'order': undefined,
+            'timestamp': timestamp,
+            'datetime': this.iso8601 (timestamp),
+            'symbol': this.safeSymbol (undefined, market),
+            'type': undefined,
+            'side': side,
+            'price': price,
+            'amount': amount,
+            'cost': undefined,
+            'takerOrMaker': 'taker',
+            'fee': undefined,
+            'info': trade,
+        }, market);
+    }
+
+    /**
+     * @method
+     * @name hibachi#fetchTrades
+     * @description get the list of most recent trades for a particular symbol
+     * @see https://api-doc.hibachi.xyz/#86a53bc1-d3bb-4b93-8a11-7034d4698caa
+     * @param {string} symbol unified market symbol
+     * @param {int} [since] timestamp in ms of the earliest trade to fetch
+     * @param {int} [limit] the maximum amount of trades to fetch (maximum value is 100)
+     * @param {object} [params] extra parameters specific to the hibachi api endpoint
+     * @returns {object[]} a list of recent [trade structures]
+     */
+    async fetchTrades (symbol: string, since: Int = undefined, limit: Int = undefined, params = {}): Promise<Trade[]> {
+        await this.loadMarkets ();
+        const market = this.market (symbol);
+        const request = {
+            'symbol': market['id'],
+        };
+        const response = await this.publicGetMarketDataTrades (this.extend (request, params));
+        //
+        // {
+        //     "trades": [
+        //         {
+        //             "price": "111091.38352",
+        //             "quantity": "0.0090090093",
+        //             "takerSide": "Buy",
+        //             "timestamp": 1752095479
+        //         },
+        //     ]
+        // }
+        //
+        const trades = this.safeList (response, 'trades', []);
+        return this.parseTrades (trades, market);
     }
 
     /**
@@ -420,9 +497,10 @@ export default class hibachi extends Exchange {
      * @see https://api-doc.hibachi.xyz/#4abb30c4-e5c7-4b0f-9ade-790111dbfa47
      * @description fetches a price ticker and the related information for the past 24h
      * @param {string} symbol unified symbol of the market
+     * @param {object} [params] extra parameters specific to the hibachi api endpoint
      * @returns {object} a [ticker structure]{@link https://docs.ccxt.com/#/?id=ticker-structure}
      */
-    async fetchTicker (symbol: Str): Promise<Ticker> {
+    async fetchTicker (symbol: Str, params = {}): Promise<Ticker> {
         await this.loadMarkets ();
         const market = this.market (symbol);
         const request: Dict = {
@@ -448,7 +526,138 @@ export default class hibachi extends Exchange {
         //     "symbol": "ETH/USDT-P",
         //     "volume24h": "23554.858590416"
         // }
-        return this.parseTicker (prices_response, stats_response, market);
+        const ticker = {
+            'prices': prices_response,
+            'stats': stats_response,
+        };
+        return this.parseTicker (ticker, market);
+    }
+
+    orderMessage (market, nonce: number, fee_rate: number, type: OrderType, side: OrderSide, amount: number, price: Num = undefined) {
+        let side_code = 0;
+        if (side === 'ask') {
+            side_code = 0;
+        } else if (side === 'buy') {
+            side_code = 1;
+        }
+        // TODO: it will be safer to use big decimal to avoid rounding errors
+        const eps = 1e-9;
+        const encodedNonce = this.base16ToBinary (this.intToBase16 (nonce).padStart (16, '0'));
+        const encodedMarketId = this.base16ToBinary (this.intToBase16 (market.numericId).padStart (8, '0'));
+        const encodedQuantity = this.base16ToBinary (this.intToBase16 (Math.floor (amount / market.precision.amount + eps)).padStart (16, '0'));
+        const encodedSide = this.base16ToBinary (this.intToBase16 (side_code).padStart (8, '0'));
+        const encodedFeeRate = this.base16ToBinary (this.intToBase16 (Math.floor (fee_rate * (10 ** 8) + eps)).padStart (16, '0'));
+        let encodedPrice = this.binaryConcat ();
+        if (type === 'limit') {
+            encodedPrice = this.base16ToBinary (this.intToBase16 (Math.floor (price / market.precision.price + eps)).padStart (16, '0'));
+        }
+        const message = this.binaryConcat (encodedNonce, encodedMarketId, encodedQuantity, encodedSide, encodedPrice, encodedFeeRate);
+        return message;
+    }
+
+    /**
+     * @method
+     * @name hibachi#createOrder
+     * @description create a trade order
+     * @see https://api-doc.hibachi.xyz/#00f6d5ad-5275-41cb-a1a8-19ed5d142124
+     * @param {string} symbol unified symbol of the market to create an order in
+     * @param {string} type 'market' or 'limit'
+     * @param {string} side 'buy' or 'sell'
+     * @param {float} amount how much of currency you want to trade in units of base currency
+     * @param {float} [price] the price at which the order is to be fulfilled, in units of the quote currency, ignored in market orders
+     * @param {object} [params] extra parameters specific to the exchange API endpoint
+     * @returns {object} an [order structure]{@link https://docs.ccxt.com/#/?id=order-structure}
+     */
+    async createOrder (symbol: string, type: OrderType, side: OrderSide, amount: number, price: Num = undefined, params = {}) {
+        await this.loadMarkets ();
+        const market = this.market (symbol);
+        const nonce = this.nonce ();
+        const fee_rate = Math.max (market.taker, market.maker);
+        let side_internal = '';
+        if (side === 'sell') {
+            side_internal = 'ASK';
+        } else if (side === 'buy') {
+            side_internal = 'BID';
+        }
+        let price_internal = '';
+        if (price) {
+            price_internal = price.toString ();
+        }
+        const message = this.orderMessage (market, nonce, fee_rate, type, side, amount, price);
+        const signature = this.signMessage (message, this.privateKey);
+        const request = {
+            'accountId': this.accountId,
+            'symbol': market.id,
+            'nonce': nonce,
+            'side': side_internal,
+            'orderType': type.toUpperCase (),
+            'quantity': amount.toString (),
+            'price': price_internal,
+            'signature': signature,
+            'maxFeesPercent': fee_rate.toString (),
+        };
+        const response = await this.privatePostTradeOrder (request);
+        //
+        // {
+        //     "orderId": "578721673790138368"
+        // }
+        //
+        return this.safeOrder ({
+            'id': response.orderId,
+            'status': 'pending',
+        });
+    }
+
+    /**
+     * @method
+     * @name hibachi#cancelOrder
+     * @see https://api-doc.hibachi.xyz/#e99c4f48-e610-4b7c-b7f6-1b4bb7af0271
+     * @description cancels an open order
+     * @param {string} id order id
+     * @param {string} symbol is unused
+     * @param {object} [params] extra parameters specific to the exchange API endpoint
+     * @returns {object} An [order structure]{@link https://docs.ccxt.com/#/?id=order-structure}
+     */
+    async cancelOrder (id: string, symbol: Str = undefined, params = {}) {
+        this.checkRequiredCredentials ();
+        const message = this.base16ToBinary (this.intToBase16 (this.parseToInt (id)).padStart (16, '0'));
+        const signature = this.signMessage (message, this.privateKey);
+        const request: Dict = {
+            'accountId': this.accountId,
+            'orderId': id,
+            'signature': signature,
+        };
+        await this.privateDeleteTradeOrder (this.extend (request, params));
+        // At this time the response body is empty. A 200 response means the cancel request is accepted and sent to cancel
+        //
+        // {}
+        //
+        return this.safeOrder ({
+            'id': id,
+            'status': 'canceled',
+        });
+    }
+
+    nonce () {
+        return this.milliseconds ();
+    }
+
+    hashMessage (message) {
+        return this.hash (message, sha256, 'hex');
+    }
+
+    signHash (hash, privateKey) {
+        // We only support ECDSA signature for trustless account for now
+        // TODO: add support for HMAC signature for exchange managed account
+        const signature = ecdsa (hash.slice (-64), privateKey.slice (-64), secp256k1, undefined);
+        const r = signature['r'];
+        const s = signature['s'];
+        const v = signature['v'];
+        return r.padStart (64, '0') + s.padStart (64, '0') + v.toString (16).padStart (2, '0');
+    }
+
+    signMessage (message, privateKey) {
+        return this.signHash (this.hashMessage (message), privateKey.slice (-64));
     }
 
     /**
@@ -510,17 +719,22 @@ export default class hibachi extends Exchange {
     }
 
     sign (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {
-        const request = this.omit (params, this.extractParams (path));
         const endpoint = '/' + this.implodeParams (path, params);
         let url = this.urls['api'][api] + endpoint;
-        const query = this.urlencode (request);
-        if (query.length !== 0) {
-            url += '?' + query;
+        headers = {};
+        if (method === 'GET') {
+            const request = this.omit (params, this.extractParams (path));
+            const query = this.urlencode (request);
+            if (query.length !== 0) {
+                url += '?' + query;
+            }
+        }
+        if (method === 'POST' || method === 'DELETE') {
+            headers['content-type'] = 'application/json';
+            body = this.json (params);
         }
         if (api === 'private') {
-            headers = {
-                'Authorization': this.apiKey,
-            };
+            headers['Authorization'] = this.apiKey;
         }
         return { 'url': url, 'method': method, 'body': body, 'headers': headers };
     }
