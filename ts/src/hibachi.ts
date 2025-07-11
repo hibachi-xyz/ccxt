@@ -109,8 +109,13 @@ export default class hibachi extends Exchange {
                 'withdraw': false,
             },
             'timeframes': {
-                '1m': '1m',
-                // TODO: add all timeframes
+                '1m': '1min',
+                '5m': '5min',
+                '15m': '15min',
+                '1h': '1h',
+                '4h': '4h',
+                '1d': '1d',
+                '1w': '1w',
             },
             'urls': {
                 'logo': 'https://github.com/user-attachments/assets/xxx', // TODO: upload logo
