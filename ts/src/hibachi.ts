@@ -718,7 +718,7 @@ export default class hibachi extends Exchange {
         //         "startPrice": "3515.39"
         //     }
         // }
-        return this.parseOrderBook (formatted_response, symbol, undefined, 'bid', 'ask', 'price', 'quantity');
+        return this.parseOrderBook (formatted_response, symbol, this.milliseconds (), 'bid', 'ask', 'price', 'quantity');
     }
 
     sign (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {
