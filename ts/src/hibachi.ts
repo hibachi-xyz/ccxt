@@ -677,9 +677,9 @@ export default class hibachi extends Exchange {
             'symbol': market['id'],
         };
         const response = await this.publicGetMarketDataOrderbook (this.extend (request, params));
-        const formatted_response = {};
-        formatted_response['ask'] = this.safeValue (this.safeValue (response, 'ask'), 'levels');
-        formatted_response['bid'] = this.safeValue (this.safeValue (response, 'bid'), 'levels');
+        const formattedResponse = {};
+        formattedResponse['ask'] = this.safeValue (this.safeValue (response, 'ask'), 'levels');
+        formattedResponse['bid'] = this.safeValue (this.safeValue (response, 'bid'), 'levels');
         // {
         //     "ask": {
         //         "endPrice": "3512.63",
@@ -718,7 +718,7 @@ export default class hibachi extends Exchange {
         //         "startPrice": "3515.39"
         //     }
         // }
-        return this.parseOrderBook (formatted_response, symbol, this.milliseconds (), 'bid', 'ask', 'price', 'quantity');
+        return this.parseOrderBook (formattedResponse, symbol, this.milliseconds (), 'bid', 'ask', 'price', 'quantity');
     }
 
     sign (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {
