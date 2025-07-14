@@ -541,48 +541,48 @@ export default class hibachi extends Exchange {
      * @method
      * @name hibachi#fetchTradingFees
      * @description fetch the trading fee
-     * @param params 
+     * @param params extra parameters
      * @returns {object} a map of market symbols to [fee structures]{@link https://docs.ccxt.com/#/?id=fee-structure}
      */
     async fetchTradingFees (params = {}): Promise<TradingFees> {
-        let markets = await this.loadMarkets ();
+        await this.loadMarkets ();
         // We currently don't have market-specific trade fees. We will fetch from exchange-info for now
-        let exchangeInfo = await this.publicGetMarketExchangeInfo (params);
+        const exchangeInfo = await this.publicGetMarketExchangeInfo (params);
         //     "feeConfig": {
-        //     "depositFees": "0.004498",
-        //     "instantWithdrawDstPublicKey": "a4fff986badd3b58ead09cc617a82ff1b5b77b98d560baa27fbcffa4c08610b6372f362f3e8e530291f24251f2c332d958bf776c88ae4370380eee943cddf859",
-        //     "instantWithdrawalFees": [
-        //         [
-        //             1000,
-        //             0.002
+        //         "depositFees": "0.004498",
+        //         "instantWithdrawDstPublicKey": "a4fff986badd3b58ead09cc617a82ff1b5b77b98d560baa27fbcffa4c08610b6372f362f3e8e530291f24251f2c332d958bf776c88ae4370380eee943cddf859",
+        //         "instantWithdrawalFees": [
+        //             [
+        //                 1000,
+        //                 0.002
+        //             ],
+        //             [
+        //                 100,
+        //                 0.004
+        //             ],
+        //             [
+        //                 50,
+        //                 0.005
+        //             ],
+        //             [
+        //                 20,
+        //                 0.01
+        //             ],
+        //             [
+        //                 5,
+        //                 0.02
+        //             ]
         //         ],
-        //         [
-        //             100,
-        //             0.004
-        //         ],
-        //         [
-        //             50,
-        //             0.005
-        //         ],
-        //         [
-        //             20,
-        //             0.01
-        //         ],
-        //         [
-        //             5,
-        //             0.02
-        //         ]
-        //     ],
-        //     "tradeMakerFeeRate": "0.00000000",
-        //     "tradeTakerFeeRate": "0.00020000",
-        //     "transferFeeRate": "0.00010000",
-        //     "withdrawalFees": "0.011995"
+        //         "tradeMakerFeeRate": "0.00000000",
+        //         "tradeTakerFeeRate": "0.00020000",
+        //         "transferFeeRate": "0.00010000",
+        //         "withdrawalFees": "0.011995"
         //    },
         const feeConfig = this.safeDict (exchangeInfo, 'feeConfig');
         const makerFeeRate = this.safeNumber (feeConfig, 'tradeMakerFeeRate');
         const takerFeeRate = this.safeNumber (feeConfig, 'tradeTakerFeeRate');
         const result: Dict = {};
-        for ( let i = 0; i < this.symbols.length; i++) {
+        for (let i = 0; i < this.symbols.length; i++) {
             const symbol = this.symbols[i];
             result[symbol] = {
                 'info': feeConfig,
@@ -590,7 +590,7 @@ export default class hibachi extends Exchange {
                 'maker': makerFeeRate,
                 'taker': takerFeeRate,
                 'percentage': true,
-            }
+            };
         }
         return result;
     }
