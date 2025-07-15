@@ -3,8 +3,8 @@
 
 import Exchange from './abstract/hibachi.js';
 import { TICK_SIZE } from './base/functions/number.js';
-import type { Balances, Currencies, Dict, Market, Str, Ticker, Trade, Int, Num, OrderSide, OrderType, OrderBook, Transaction } from './base/types.js';
-import { ecdsa } from './base/functions/crypto.js';
+import type { Balances, Currencies, Dict, Market, Str, Ticker, Trade, Int, Num, OrderSide, OrderType, OrderBook, TradingFees, Transaction } from './base/types.js';
+import { ecdsa, hmac } from './base/functions/crypto.js';
 import { sha256 } from './static_dependencies/noble-hashes/sha256.js';
 import { secp256k1 } from './static_dependencies/noble-curves/secp256k1.js';
 import { Precise } from './base/Precise.js';
@@ -102,7 +102,8 @@ export default class hibachi extends Exchange {
                 'fetchTime': false,
                 'fetchTrades': true,
                 'fetchTradingFee': false,
-                'fetchTradingFees': false,
+                'fetchTradingFees': true,
+                'fetchTradingLimits': false,
                 'fetchTransactions': 'emulated',
                 'fetchTransfers': false,
                 'fetchWithdrawals': false,
@@ -576,6 +577,64 @@ export default class hibachi extends Exchange {
         return this.parseTicker (ticker, market);
     }
 
+    /**
+     * @method
+     * @name hibachi#fetchTradingFees
+     * @description fetch the trading fee
+     * @param params extra parameters
+     * @returns {object} a map of market symbols to [fee structures]{@link https://docs.ccxt.com/#/?id=fee-structure}
+     */
+    async fetchTradingFees (params = {}): Promise<TradingFees> {
+        await this.loadMarkets ();
+        // We currently don't have market-specific trade fees. We will fetch from exchange-info for now
+        const exchangeInfo = await this.publicGetMarketExchangeInfo (params);
+        //     "feeConfig": {
+        //         "depositFees": "0.004498",
+        //         "instantWithdrawDstPublicKey": "a4fff986badd3b58ead09cc617a82ff1b5b77b98d560baa27fbcffa4c08610b6372f362f3e8e530291f24251f2c332d958bf776c88ae4370380eee943cddf859",
+        //         "instantWithdrawalFees": [
+        //             [
+        //                 1000,
+        //                 0.002
+        //             ],
+        //             [
+        //                 100,
+        //                 0.004
+        //             ],
+        //             [
+        //                 50,
+        //                 0.005
+        //             ],
+        //             [
+        //                 20,
+        //                 0.01
+        //             ],
+        //             [
+        //                 5,
+        //                 0.02
+        //             ]
+        //         ],
+        //         "tradeMakerFeeRate": "0.00000000",
+        //         "tradeTakerFeeRate": "0.00020000",
+        //         "transferFeeRate": "0.00010000",
+        //         "withdrawalFees": "0.011995"
+        //    },
+        const feeConfig = this.safeDict (exchangeInfo, 'feeConfig');
+        const makerFeeRate = this.safeNumber (feeConfig, 'tradeMakerFeeRate');
+        const takerFeeRate = this.safeNumber (feeConfig, 'tradeTakerFeeRate');
+        const result: Dict = {};
+        for (let i = 0; i < this.symbols.length; i++) {
+            const symbol = this.symbols[i];
+            result[symbol] = {
+                'info': feeConfig,
+                'symbol': symbol,
+                'maker': makerFeeRate,
+                'taker': takerFeeRate,
+                'percentage': true,
+            };
+        }
+        return result;
+    }
+
     orderMessage (market, nonce: number, feeRate: number, type: OrderType, side: OrderSide, amount: number, price: Num = undefined) {
         let sideInternal = 0;
         if (side === 'ask') {
@@ -841,22 +900,19 @@ export default class hibachi extends Exchange {
         return this.milliseconds ();
     }
 
-    hashMessage (message) {
-        return this.hash (message, sha256, 'hex');
-    }
-
-    signHash (hash, privateKey) {
-        // We only support ECDSA signature for trustless account for now
-        // TODO: add support for HMAC signature for exchange managed account
-        const signature = ecdsa (hash.slice (-64), privateKey.slice (-64), secp256k1, undefined);
-        const r = signature['r'];
-        const s = signature['s'];
-        const v = signature['v'];
-        return r.padStart (64, '0') + s.padStart (64, '0') + v.toString (16).padStart (2, '0');
-    }
-
     signMessage (message, privateKey) {
-        return this.signHash (this.hashMessage (message), privateKey.slice (-64));
+        if (privateKey.length === 44) {
+            // For Exchange Managed account, the key length is 44 and we use HMAC to sign the message
+            return hmac (message, privateKey, sha256);
+        } else {
+            // For Trustless account, the key length is 66 including '0x' and we use ECDSA to sign the message
+            const hash = this.hash (message, sha256, 'hex');
+            const signature = ecdsa (hash.slice (-64), privateKey.slice (-64), secp256k1, undefined);
+            const r = signature['r'];
+            const s = signature['s'];
+            const v = signature['v'];
+            return r.padStart (64, '0') + s.padStart (64, '0') + v.toString (16).padStart (2, '0');
+        }
     }
 
     /**
