@@ -162,8 +162,8 @@ export default class hibachi extends Exchange {
                 'trading': {
                     'tierBased': false,
                     'percentage': true,
-                    'maker': this.parseNumber ('0.0000'),
-                    'taker': this.parseNumber ('0.0002'),
+                    'maker': undefined, // Use fetchTradingFees
+                    'taker': undefined,
                 },
             },
             'options': {
