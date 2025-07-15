@@ -541,55 +541,21 @@ export default class hibachi extends Exchange {
     /**
      * @method
      * @name hibachi#fetchTradingFees
-     * @description fetch the trading fee
-     * @param params extra parameters
+     * @description fetch the trading fees
+     * @param params extra parameters (currently unused)
      * @returns {object} a map of market symbols to [fee structures]{@link https://docs.ccxt.com/#/?id=fee-structure}
      */
     async fetchTradingFees (params = {}): Promise<TradingFees> {
-        await this.loadMarkets ();
-        // We currently don't have market-specific trade fees. We will fetch from exchange-info for now
-        const exchangeInfo = await this.publicGetMarketExchangeInfo (params);
-        //     "feeConfig": {
-        //         "depositFees": "0.004498",
-        //         "instantWithdrawDstPublicKey": "a4fff986badd3b58ead09cc617a82ff1b5b77b98d560baa27fbcffa4c08610b6372f362f3e8e530291f24251f2c332d958bf776c88ae4370380eee943cddf859",
-        //         "instantWithdrawalFees": [
-        //             [
-        //                 1000,
-        //                 0.002
-        //             ],
-        //             [
-        //                 100,
-        //                 0.004
-        //             ],
-        //             [
-        //                 50,
-        //                 0.005
-        //             ],
-        //             [
-        //                 20,
-        //                 0.01
-        //             ],
-        //             [
-        //                 5,
-        //                 0.02
-        //             ]
-        //         ],
-        //         "tradeMakerFeeRate": "0.00000000",
-        //         "tradeTakerFeeRate": "0.00020000",
-        //         "transferFeeRate": "0.00010000",
-        //         "withdrawalFees": "0.011995"
-        //    },
-        const feeConfig = this.safeDict (exchangeInfo, 'feeConfig');
-        const makerFeeRate = this.safeNumber (feeConfig, 'tradeMakerFeeRate');
-        const takerFeeRate = this.safeNumber (feeConfig, 'tradeTakerFeeRate');
+        // We currently don't have market-specific trade fees
+        const market = await this.loadMarkets ();
         const result: Dict = {};
         for (let i = 0; i < this.symbols.length; i++) {
             const symbol = this.symbols[i];
             result[symbol] = {
-                'info': feeConfig,
+                'info': undefined,
                 'symbol': symbol,
-                'maker': makerFeeRate,
-                'taker': takerFeeRate,
+                'maker': market.fees.maker,
+                'taker': market.fees.taker,
                 'percentage': true,
             };
         }
