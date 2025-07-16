@@ -667,12 +667,6 @@ export default class hibachi extends Exchange {
         return this.parseOrder (response, market);
      }
 
-    orderMessage (market, nonce: number, fee_rate: number, type: OrderType, side: OrderSide, amount: number, price: Num = undefined) {
-        let side_code = 0;
-        if (side === 'ask') {
-            side_code = 0;
-        } else if (side === 'buy') {
-            side_code = 1;
     /**
      * @method
      * @name hibachi#fetchTradingFees
