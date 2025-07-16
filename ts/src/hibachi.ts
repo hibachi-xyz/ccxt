@@ -615,8 +615,7 @@ export default class hibachi extends Exchange {
         const availableQuantity = this.safeString(order, 'availableQuantity');
         let filled = undefined;
         if (totalQuantity !== undefined && availableQuantity !== undefined) {
-            const filledString = Precise.stringSub(totalQuantity, availableQuantity);
-            const filled = this.parseNumber(filledString);
+            const filled = Precise.stringSub(totalQuantity, availableQuantity);
         }
     
         return this.safeOrder ({
