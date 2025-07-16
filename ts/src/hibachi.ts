@@ -1067,8 +1067,8 @@ export default class hibachi extends Exchange {
         // }
         return {
             'info': response,
-            'currency': undefined,
-            'network': undefined,
+            'currency': 'USDT',
+            'network': 'ARBITRUM',
             'address': this.safeString (response, 'depositAddressEvm'),
             'tag': undefined,
         };
