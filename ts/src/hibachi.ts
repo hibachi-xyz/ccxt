@@ -1056,6 +1056,7 @@ export default class hibachi extends Exchange {
      * @returns {object} an [address structure]{@link https://docs.ccxt.com/#/?id=address-structure}
      */
     async fetchDepositAddress (code: string, params = {}): Promise<DepositAddress> {
+        this.checkRequiredCredentials ();
         const publicKey = this.derivePublicKeyFromPrivate ();
         const request = {
             'publicKey': '0x' + this.binaryToBase16 (publicKey),
