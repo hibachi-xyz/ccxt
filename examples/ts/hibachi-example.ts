@@ -47,7 +47,7 @@ async function example () {
     console.log('create, edit and cancel limit order', order3.id, order4.id, order5.id);
 
     const order1_info = await exchange.fetchOrder (order1.id, 'BTC/USDT:USDT');
-    console.log ('fetchOrderBook', order1_info);
+    console.log ('fetchOrder', order1_info);
     
     const orderbook = await exchange.fetchOrderBook ('BTC/USDT:USDT');
     console.log ('fetchOrderBook', orderbook);

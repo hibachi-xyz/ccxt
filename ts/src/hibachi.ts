@@ -596,28 +596,31 @@ export default class hibachi extends Exchange {
     parseOrder (order: Dict, market: Market = undefined): Order {
         const marketId = this.safeString (order, 'symbol');
         market = this.safeMarket (marketId, market);
-    
         const status = this.safeString (order, 'status');
         const type = this.safeStringLower (order, 'orderType');
         const price = this.safeString (order, 'price');
         const rawSide = this.safeString (order, 'side');
-    
         let side = undefined;
         if (rawSide === 'BID') {
             side = 'buy';
         } else if (rawSide === 'ASK') {
             side = 'sell';
         }
-    
         const amount = this.safeString (order, 'totalQuantity');
         const remaining = this.safeString (order, 'availableQuantity');
-        const totalQuantity = this.safeString(order, 'totalQuantity');
-        const availableQuantity = this.safeString(order, 'availableQuantity');
+        const totalQuantity = this.safeString (order, 'totalQuantity');
+        const availableQuantity = this.safeString (order, 'availableQuantity');
         let filled = undefined;
         if (totalQuantity !== undefined && availableQuantity !== undefined) {
-            const filled = Precise.stringSub(totalQuantity, availableQuantity);
+            filled = Precise.stringSub (totalQuantity, availableQuantity);
         }
-    
+        let timeInForce = 'GTC';
+        const orderFlags = this.safeValue (order, 'orderFlags');
+        if (orderFlags === 'PostOnly') {
+            timeInForce = 'PO';
+        } else if (orderFlags === 'Ioc') {
+            timeInForce = 'IOC';
+        }
         return this.safeOrder ({
             'id': this.safeString (order, 'orderId'),
             'clientOrderId': undefined,
@@ -628,7 +631,7 @@ export default class hibachi extends Exchange {
             'status': this.parseOrderStatus (status),
             'symbol': market['symbol'],
             'type': type,
-            'timeInForce': undefined,
+            'timeInForce': timeInForce,
             'side': side,
             'price': price,
             'average': undefined,
@@ -644,7 +647,7 @@ export default class hibachi extends Exchange {
         }, market);
     }
 
-     /**
+    /**
      * @method
      * @name hibachi#fetchOrder
      * @description fetches information on an order made by the user
@@ -654,8 +657,7 @@ export default class hibachi extends Exchange {
      * @param {object} [params] extra parameters specific to the exchange API endpoint
      * @returns {object} An [order structure]{@link https://docs.ccxt.com/#/?id=order-structure}
      */
-     async fetchOrder (id: string, symbol: Str = undefined, params = {}): Promise<Order> {
-        const methodName = 'fetchOrder';
+    async fetchOrder (id: string, symbol: Str = undefined, params = {}): Promise<Order> {
         await this.loadMarkets ();
         const market = this.market (symbol);
         const request: Dict = {
@@ -664,7 +666,7 @@ export default class hibachi extends Exchange {
         };
         const response = await this.privateGetTradeOrder (this.extend (request, params));
         return this.parseOrder (response, market);
-     }
+    }
 
     /**
      * @method
