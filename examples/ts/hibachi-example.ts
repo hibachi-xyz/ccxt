@@ -14,6 +14,7 @@ import fs from 'fs';
     }
     ```
     You can get the accountId, apiKey and privateKey from Hibachi App by creating an API key
+    Note: if you are using exchange managed account, the privateKey's length will be 44 instead
     The withdrawAddress can be any ethereum wallet address, that is used to receive funds for withdraw tests
 */
 async function example () {
@@ -50,7 +51,10 @@ async function example () {
 
     const withdrawResponse = await exchange.withdraw('USDT', 0.02, keys.hibachi.withdrawAddress);
     console.log(withdrawResponse);
-    
+
+    const myTrades = await exchange.fetchMyTrades('BTC/USDT:USDT', undefined, 1);
+    console.log('fetchMyTrades', myTrades);
+
     const tradingFees = await exchange.fetchTradingFees ();
     console.log ('fetchTradingFees', tradingFees);
 
