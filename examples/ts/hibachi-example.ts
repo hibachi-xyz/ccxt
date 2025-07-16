@@ -51,7 +51,6 @@ async function example () {
     
     const orderbook = await exchange.fetchOrderBook ('BTC/USDT:USDT');
     console.log ('fetchOrderBook', orderbook);
-    
     const withdrawResponse = await exchange.withdraw('USDT', 0.02, keys.hibachi.withdrawAddress);
     console.log(withdrawResponse);
 
