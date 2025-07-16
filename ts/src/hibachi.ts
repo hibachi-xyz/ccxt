@@ -3,10 +3,12 @@
 
 import Exchange from './abstract/hibachi.js';
 import { TICK_SIZE } from './base/functions/number.js';
-import type { Balances, Currencies, Dict, Market, Str, Ticker, Trade, Int, Num, OrderSide, OrderType } from './base/types.js';
+import type { Balances, Currencies, Dict, Market, Str, Ticker, Trade, Int, Num, OrderSide, OrderType, Order } from './base/types.js';
 import { ecdsa } from './base/functions/crypto.js';
 import { sha256 } from './static_dependencies/noble-hashes/sha256.js';
 import { secp256k1 } from './static_dependencies/noble-curves/secp256k1.js';
+import Precise from '../base/Precise.js';
+
 
 // ---------------------------------------------------------------------------
 
@@ -87,7 +89,7 @@ export default class hibachi extends Exchange {
                 'fetchOpenInterestHistory': false,
                 'fetchOpenOrder': false,
                 'fetchOpenOrders': false,
-                'fetchOrder': false,
+                'fetchOrder': true,
                 'fetchOrderBook': false,
                 'fetchOrders': false,
                 'fetchOrderTrades': false,
@@ -136,6 +138,7 @@ export default class hibachi extends Exchange {
                 'private': {
                     'get': {
                         'trade/account/info': 1,
+                        '/trade/order': 1,
                     },
                     'put': {
                         'trade/order': 1,
@@ -535,6 +538,94 @@ export default class hibachi extends Exchange {
         };
         return this.parseTicker (ticker, market);
     }
+
+    parseOrderStatus (status: string): string {
+        const statuses: Dict = {
+            'PENDING': 'open',
+            'CHILD_PENDING': 'open',
+            'SCHEDULED_TWAP': 'open',
+            'PLACED': 'open',
+            'PARTIALLY_FILLED': 'open',
+            'FILLED': 'closed',
+            'CANCELLED': 'canceled',
+            'REJECTED': 'rejected',
+        };
+        return this.safeString (statuses, status, status);
+    }
+
+    parseOrder (order: Dict, market: Market = undefined): Order {
+        const marketId = this.safeString (order, 'symbol');
+        market = this.safeMarket (marketId, market);
+    
+        const status = this.safeString (order, 'status');
+        const type = this.safeStringLower (order, 'orderType');
+        const price = this.safeString (order, 'price');
+        const rawSide = this.safeString (order, 'side');
+    
+        let side = undefined;
+        if (rawSide === 'BID') {
+            side = 'buy';
+        } else if (rawSide === 'ASK') {
+            side = 'sell';
+        }
+    
+        const amount = this.safeString (order, 'totalQuantity');
+        const remaining = this.safeString (order, 'availableQuantity');
+        const totalQuantity = this.safeString(order, 'totalQuantity');
+        const availableQuantity = this.safeString(order, 'availableQuantity');
+        let filled = undefined;
+        if (totalQuantity !== undefined && availableQuantity !== undefined) {
+            const filledString = Precise.stringSub(totalQuantity, availableQuantity);
+            const filled = this.parseNumber(filledString);
+        }
+    
+        return this.safeOrder ({
+            'id': this.safeString (order, 'orderId'),
+            'clientOrderId': undefined,
+            'datetime': undefined,
+            'timestamp': undefined,
+            'lastTradeTimestamp': undefined,
+            'lastUpdateTimestamp': undefined,
+            'status': this.parseOrderStatus (status),
+            'symbol': market['symbol'],
+            'type': type,
+            'timeInForce': undefined,
+            'side': side,
+            'price': price,
+            'average': undefined,
+            'amount': amount,
+            'filled': filled,
+            'remaining': remaining,
+            'cost': undefined,
+            'trades': undefined,
+            'fee': undefined,
+            'reduceOnly': undefined,
+            'postOnly': undefined,
+            'info': order,
+        }, market);
+    }
+
+     /**
+     * @method
+     * @name hibachi#fetchOrder
+     * @description fetches information on an order made by the user
+     * @see https://api-doc.hibachi.xyz/#096a8854-b918-4de8-8731-b2a28d26b96d
+     * @param {string} id the order id
+     * @param {string} symbol unified symbol of the market the order was made in
+     * @param {object} [params] extra parameters specific to the exchange API endpoint
+     * @returns {object} An [order structure]{@link https://docs.ccxt.com/#/?id=order-structure}
+     */
+     async fetchOrder (id: string, symbol: Str = undefined, params = {}): Promise<Order> {
+        const methodName = 'fetchOrder';
+        await this.loadMarkets ();
+        const market = this.market (symbol);
+        const request: Dict = {
+            'orderId': id,
+            'accountId': this.accountId,
+        };
+        const response = await this.privateGetTradeOrder (this.extend (request, params));
+        return this.parseOrder (response, market);
+     }
 
     orderMessage (market, nonce: number, fee_rate: number, type: OrderType, side: OrderSide, amount: number, price: Num = undefined) {
         let side_code = 0;
