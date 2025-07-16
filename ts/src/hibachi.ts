@@ -1022,7 +1022,42 @@ export default class hibachi extends Exchange {
     }
 
     parseOrder (order: Dict, market: Market = undefined): Order {
-        
+        const timestamp = this.safeInteger (order, 'creationTime') * 1000; // Convert to milliseconds
+        let side = undefined;
+        if (this.safeString (order, 'side') === 'BID') {
+            side = 'BID';
+        } else if (this.safeString (order, 'side') === 'ASK') {
+            side = 'SELL';
+        }
+        const totalQuantity = this.safeNumber (order, 'totalQuantity');
+        const availableQuantity = this.safeNumber (order, 'availableQuantity');
+        const filled = totalQuantity - availableQuantity;
+        const remaining = availableQuantity;
+        return this.safeOrder ({
+            'info': order,
+            'id': this.safeString (order, 'orderId'),
+            'clientOrderId': undefined, // Currently unsupported
+            'timestamp': timestamp,
+            'datetime': this.iso8601 (timestamp),
+            'lastTradeTimestamp': undefined,
+            'lastUpdateTimestamp': undefined,
+            'symbol': this.safeSymbol (this.safeString (order, 'symbol'), market),
+            'type': this.safeString (order, 'type'),
+            'timeInForce': undefined,
+            'postOnly': undefined,
+            'reduceOnly': undefined,
+            'side': side,
+            'price': this.safeString (order, 'price'),
+            'triggerPrice': undefined,
+            'amount': this.safeString (order, 'totalQuantity'),
+            'cost': undefined,
+            'average': undefined,
+            'filled': filled,
+            'remaining': remaining,
+            'status': undefined,
+            'fee': undefined,
+            'trades': undefined,
+        });
     }
 
     /**
@@ -1074,16 +1109,7 @@ export default class hibachi extends Exchange {
         //         "totalQuantity": "1.234000000"
         //     }
         // ]
-        const ordersResult = [];
-        for (let i = 0; i < response.length; i++) {
-            const openOrder = this.safeDict (response, i);
-            if (market !== undefined && market !== this.safeString (openOrder, 'symbol')) {
-                continue;
-            }
-            ordersResult.push ( Order {
-
-            })
-        }
+        return this.parseOrders (response, market, since, limit, params);
     }
 
     sign (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {
