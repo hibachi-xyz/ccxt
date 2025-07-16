@@ -1050,7 +1050,7 @@ export default class hibachi extends Exchange {
     /**
      * @method
      * @name hibachi#fetchDepositAddress
-     * @description fetch deposit address for given currency and chain. currently, we have a single EVM address across multiple EVM chains
+     * @description fetch deposit address for given currency and chain. currently, we have a single EVM address across multiple EVM chains. Note: This method is currently only supported for trustless accounts
      * @param {string} code unified currency code
      * @param {object} [params] extra parameters for API
      * @returns {object} an [address structure]{@link https://docs.ccxt.com/#/?id=address-structure}
