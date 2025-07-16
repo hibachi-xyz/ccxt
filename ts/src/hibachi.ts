@@ -616,8 +616,8 @@ export default class hibachi extends Exchange {
         }
         let timeInForce = 'GTC';
         const orderFlags = this.safeValue (order, 'orderFlags');
-        let postOnly = undefined;
-        let reduceOnly = undefined;
+        let postOnly = false;
+        let reduceOnly = false;
         if (orderFlags === 'PostOnly') {
             timeInForce = 'PO';
             postOnly = true;
@@ -626,7 +626,6 @@ export default class hibachi extends Exchange {
         } else if (orderFlags === 'ReduceOnly') {
             reduceOnly = true;
         }
-        const triggerPrice = this.safeString(order, 'triggerPrice');
         return this.safeOrder ({
             'id': this.safeString (order, 'orderId'),
             'clientOrderId': undefined,
@@ -647,8 +646,8 @@ export default class hibachi extends Exchange {
             'cost': undefined,
             'trades': undefined,
             'fee': undefined,
-            'reduceOnly': undefined,
-            'postOnly': undefined,
+            'reduceOnly': reduceOnly,
+            'postOnly': postOnly,
             'info': order,
         }, market);
     }
