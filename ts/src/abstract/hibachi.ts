@@ -13,10 +13,14 @@ interface Exchange {
     publicGetMarketDataTrades (params?: {}): Promise<implicitReturnType>;
     publicGetMarketDataPrices (params?: {}): Promise<implicitReturnType>;
     publicGetMarketDataStats (params?: {}): Promise<implicitReturnType>;
+    publicGetMarketDataOrderbook (params?: {}): Promise<implicitReturnType>;
+    privateGetCapitalDepositInfo (params?: {}): Promise<implicitReturnType>;
     privateGetTradeAccountInfo (params?: {}): Promise<implicitReturnType>;
+    privateGetTradeAccountTrades (params?: {}): Promise<implicitReturnType>;
     privatePutTradeOrder (params?: {}): Promise<implicitReturnType>;
     privateDeleteTradeOrder (params?: {}): Promise<implicitReturnType>;
     privatePostTradeOrder (params?: {}): Promise<implicitReturnType>;
+    privatePostCapitalWithdraw (params?: {}): Promise<implicitReturnType>;
 }
 abstract class Exchange extends _Exchange {}
 

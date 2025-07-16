@@ -3,12 +3,11 @@
 
 import Exchange from './abstract/hibachi.js';
 import { TICK_SIZE } from './base/functions/number.js';
-import type { Balances, Currencies, Dict, Market, Str, Ticker, Trade, Int, Num, OrderSide, OrderType, Order } from './base/types.js';
-import { ecdsa } from './base/functions/crypto.js';
+import type { Balances, Currencies, Dict, Market, Str, Ticker, Trade, Int, Num, OrderSide, OrderType, OrderBook, TradingFees, Transaction, DepositAddress, Order } from './base/types.js';
+import { ecdsa, hmac } from './base/functions/crypto.js';
 import { sha256 } from './static_dependencies/noble-hashes/sha256.js';
 import { secp256k1 } from './static_dependencies/noble-curves/secp256k1.js';
-import Precise from '../base/Precise.js';
-
+import { Precise } from './base/Precise.js';
 
 // ---------------------------------------------------------------------------
 
@@ -68,7 +67,7 @@ export default class hibachi extends Exchange {
                 'fetchConvertCurrencies': false,
                 'fetchConvertQuote': false,
                 'fetchCurrencies': true,
-                'fetchDepositAddress': false,
+                'fetchDepositAddress': true,
                 'fetchDeposits': false,
                 'fetchDepositsWithdrawals': false,
                 'fetchFundingHistory': false,
@@ -84,13 +83,13 @@ export default class hibachi extends Exchange {
                 'fetchMarginMode': false,
                 'fetchMarkets': true,
                 'fetchMarkOHLCV': false,
-                'fetchMyTrades': false,
+                'fetchMyTrades': true,
                 'fetchOHLCV': false,
                 'fetchOpenInterestHistory': false,
                 'fetchOpenOrder': false,
                 'fetchOpenOrders': false,
                 'fetchOrder': true,
-                'fetchOrderBook': false,
+                'fetchOrderBook': true,
                 'fetchOrders': false,
                 'fetchOrderTrades': false,
                 'fetchPosition': false,
@@ -103,7 +102,8 @@ export default class hibachi extends Exchange {
                 'fetchTime': false,
                 'fetchTrades': true,
                 'fetchTradingFee': false,
-                'fetchTradingFees': false,
+                'fetchTradingFees': true,
+                'fetchTradingLimits': false,
                 'fetchTransactions': 'emulated',
                 'fetchTransfers': false,
                 'fetchWithdrawals': false,
@@ -112,7 +112,7 @@ export default class hibachi extends Exchange {
                 'setMargin': false,
                 'setPositionMode': false,
                 'transfer': false,
-                'withdraw': false,
+                'withdraw': true,
             },
             'timeframes': {
                 '1m': '1m',
@@ -133,12 +133,15 @@ export default class hibachi extends Exchange {
                         'market/data/trades': 1,
                         'market/data/prices': 1,
                         'market/data/stats': 1,
+                        'market/data/orderbook': 1,
                     },
                 },
                 'private': {
                     'get': {
+                        'capital/deposit-info': 1,
                         'trade/account/info': 1,
-                        '/trade/order': 1,
+                        'trade/order': 1,
+                        'trade/account/trades': 1,
                     },
                     'put': {
                         'trade/order': 1,
@@ -148,6 +151,7 @@ export default class hibachi extends Exchange {
                     },
                     'post': {
                         'trade/order': 1,
+                        'capital/withdraw': 1,
                     },
                 },
             },
@@ -198,8 +202,6 @@ export default class hibachi extends Exchange {
         const settleId: Str = this.safeString (market, 'settlementSymbol');
         const settle: Str = this.safeCurrencyCode (settleId);
         const symbol = base + '/' + quote + ':' + settle;
-        const underlyingDecimals = this.safeNumber (market, 'underlyingDecimals');
-        const settlementDecimals = this.safeNumber (market, 'settlementDecimals');
         return {
             'id': marketId,
             'numericId': numericId,
@@ -226,8 +228,8 @@ export default class hibachi extends Exchange {
             'strike': undefined,
             'optionType': undefined,
             'precision': {
-                'amount': 10 ** (-underlyingDecimals),
-                'price': 10 ** (underlyingDecimals - settlementDecimals) / (2 ** 32),
+                'amount': this.parseNumber (this.parsePrecision (this.safeString (market, 'underlyingDecimals'))),
+                'price': undefined,
             },
             'limits': {
                 'leverage': {
@@ -439,26 +441,64 @@ export default class hibachi extends Exchange {
         //          "takerSide": "Buy",
         //          "timestamp": 1712692147
         //      }
-        const timestamp = this.safeTimestamp (trade, 'timestamp'); // in seconds
+        //
+        // private fetchMyTrades:
+        //      {
+        //          "askAccountId": 221,
+        //          "askOrderId": 589168494921909200,
+        //          "bidAccountId": 132,
+        //          "bidOrderId": 589168494829895700,
+        //          "fee": "0.000477",
+        //          "id": 199511136,
+        //          "orderType": "MARKET",
+        //          "price": "119257.90000",
+        //          "quantity": "0.0000200000",
+        //          "realizedPnl": "-0.000352",
+        //          "side": "Sell",
+        //          "symbol": "BTC/USDT-P",
+        //          "timestamp": 1752543391
+        //      }
+        const marketId = this.safeString (trade, 'symbol');
+        market = this.safeMarket (marketId, market);
+        const symbol = market['symbol'];
+        const id = this.safeString (trade, 'id');
         const price = this.safeString (trade, 'price');
         const amount = this.safeString (trade, 'quantity');
-        let side = this.safeString (trade, 'takerSide');
-        if (side !== undefined) {
-            side = side.toLowerCase ();
+        const timestamp = this.safeInteger (trade, 'timestamp') * 1000;
+        const cost = Precise.stringMul (price, amount);
+        let side = undefined;
+        let fee = undefined;
+        let orderType = undefined;
+        let orderId = undefined;
+        let takerOrMaker = undefined;
+        if (id === undefined) {
+            // public trades
+            side = this.safeStringLower (trade, 'takerSide');
+            takerOrMaker = 'taker';
+        } else {
+            // private trades
+            side = this.safeStringLower (trade, 'side');
+            fee = { 'cost': this.safeString (trade, 'fee'), 'currency': 'USDT' };
+            orderType = this.safeStringLower (trade, 'orderType');
+            if (side === 'buy') {
+                orderId = this.safeString (trade, 'bidOrderId');
+            } else {
+                orderId = this.safeString (trade, 'askOrderId');
+            }
         }
         return this.safeTrade ({
-            'id': undefined,
-            'order': undefined,
+            'id': id,
             'timestamp': timestamp,
             'datetime': this.iso8601 (timestamp),
-            'symbol': this.safeSymbol (undefined, market),
-            'type': undefined,
+            'symbol': symbol,
             'side': side,
             'price': price,
             'amount': amount,
-            'cost': undefined,
-            'takerOrMaker': 'taker',
-            'fee': undefined,
+            'cost': cost,
+            'order': orderId,
+            'takerOrMaker': takerOrMaker,
+            'type': orderType,
+            'fee': fee,
             'info': trade,
         }, market);
     }
@@ -512,7 +552,7 @@ export default class hibachi extends Exchange {
         const request: Dict = {
             'symbol': market['id'],
         };
-        const prices_response = await this.publicGetMarketDataPrices (this.extend (request));
+        const pricesResponse = await this.publicGetMarketDataPrices (this.extend (request));
         // {
         //     "askPrice": "3514.650296",
         //     "bidPrice": "3513.596112",
@@ -525,7 +565,7 @@ export default class hibachi extends Exchange {
         //     "symbol": "ETH/USDT-P",
         //     "tradePrice": "2372.746570"
         // }
-        const stats_response = await this.publicGetMarketDataStats (this.extend (request));
+        const statsResponse = await this.publicGetMarketDataStats (this.extend (request));
         // {
         //     "high24h": "3819.507827",
         //     "low24h": "3754.474162",
@@ -533,8 +573,8 @@ export default class hibachi extends Exchange {
         //     "volume24h": "23554.858590416"
         // }
         const ticker = {
-            'prices': prices_response,
-            'stats': stats_response,
+            'prices': pricesResponse,
+            'stats': statsResponse,
         };
         return this.parseTicker (ticker, market);
     }
@@ -633,17 +673,101 @@ export default class hibachi extends Exchange {
             side_code = 0;
         } else if (side === 'buy') {
             side_code = 1;
+    /**
+     * @method
+     * @name hibachi#fetchTradingFees
+     * @description fetch the trading fee
+     * @param params extra parameters
+     * @returns {object} a map of market symbols to [fee structures]{@link https://docs.ccxt.com/#/?id=fee-structure}
+     */
+    async fetchTradingFees (params = {}): Promise<TradingFees> {
+        await this.loadMarkets ();
+        // We currently don't have market-specific trade fees. We will fetch from exchange-info for now
+        const exchangeInfo = await this.publicGetMarketExchangeInfo (params);
+        //     "feeConfig": {
+        //         "depositFees": "0.004498",
+        //         "instantWithdrawDstPublicKey": "a4fff986badd3b58ead09cc617a82ff1b5b77b98d560baa27fbcffa4c08610b6372f362f3e8e530291f24251f2c332d958bf776c88ae4370380eee943cddf859",
+        //         "instantWithdrawalFees": [
+        //             [
+        //                 1000,
+        //                 0.002
+        //             ],
+        //             [
+        //                 100,
+        //                 0.004
+        //             ],
+        //             [
+        //                 50,
+        //                 0.005
+        //             ],
+        //             [
+        //                 20,
+        //                 0.01
+        //             ],
+        //             [
+        //                 5,
+        //                 0.02
+        //             ]
+        //         ],
+        //         "tradeMakerFeeRate": "0.00000000",
+        //         "tradeTakerFeeRate": "0.00020000",
+        //         "transferFeeRate": "0.00010000",
+        //         "withdrawalFees": "0.011995"
+        //    },
+        const feeConfig = this.safeDict (exchangeInfo, 'feeConfig');
+        const makerFeeRate = this.safeNumber (feeConfig, 'tradeMakerFeeRate');
+        const takerFeeRate = this.safeNumber (feeConfig, 'tradeTakerFeeRate');
+        const result: Dict = {};
+        for (let i = 0; i < this.symbols.length; i++) {
+            const symbol = this.symbols[i];
+            result[symbol] = {
+                'info': feeConfig,
+                'symbol': symbol,
+                'maker': makerFeeRate,
+                'taker': takerFeeRate,
+                'percentage': true,
+            };
         }
-        // TODO: it will be safer to use big decimal to avoid rounding errors
-        const eps = 1e-6;
+        return result;
+    }
+
+    orderMessage (market, nonce: number, feeRate: number, type: OrderType, side: OrderSide, amount: number, price: Num = undefined) {
+        let sideInternal = 0;
+        if (side === 'ask') {
+            sideInternal = 0;
+        } else if (side === 'buy') {
+            sideInternal = 1;
+        }
+        // Converting them to internal representation:
+        // - Quantity: Internal = External * (10^underlyingDecimals)
+        // - Price: Internal = External * (2^32) * (10^(settlementDecimals-underlyingDecimals))
+        // - FeeRate: Internal = External * (10^8)
+        const amountStr = amount.toString ();
+        const feeRateStr = feeRate.toString ();
+        const info = this.safeDict (market, 'info');
+        const underlying = '1e' + this.safeNumber (info, 'underlyingDecimals').toString ();
+        const settlement = '1e' + this.safeNumber (info, 'settlementDecimals').toString ();
+        const pOne = new Precise ('1');
+        const pFeeRateFactor = new Precise ('100000000'); // 10^8
+        const pPriceFactor = new Precise ('4294967296'); // 2^32
+        const pAmount = new Precise (amountStr);
+        const pFeeRate = new Precise (feeRateStr);
+        const pUnderlying = new Precise (underlying);
+        const pSettlement = new Precise (settlement);
+        const quantityInternal = pAmount.mul (pUnderlying).div (pOne, 0);
+        const feeRateInternal = pFeeRate.mul (pFeeRateFactor).div (pOne, 0);
+        // Encoding
         const encodedNonce = this.base16ToBinary (this.intToBase16 (nonce).padStart (16, '0'));
         const encodedMarketId = this.base16ToBinary (this.intToBase16 (market.numericId).padStart (8, '0'));
-        const encodedQuantity = this.base16ToBinary (this.intToBase16 (Math.floor (amount / market.precision.amount + eps)).padStart (16, '0'));
-        const encodedSide = this.base16ToBinary (this.intToBase16 (side_code).padStart (8, '0'));
-        const encodedFeeRate = this.base16ToBinary (this.intToBase16 (Math.floor (fee_rate * (10 ** 8) + eps)).padStart (16, '0'));
+        const encodedQuantity = this.base16ToBinary (this.intToBase16 (this.parseToInt (quantityInternal.toString ())).padStart (16, '0'));
+        const encodedSide = this.base16ToBinary (this.intToBase16 (sideInternal).padStart (8, '0'));
+        const encodedFeeRate = this.base16ToBinary (this.intToBase16 (this.parseToInt (feeRateInternal.toString ())).padStart (16, '0'));
         let encodedPrice = this.binaryConcat ();
         if (type === 'limit') {
-            encodedPrice = this.base16ToBinary (this.intToBase16 (Math.floor (price / market.precision.price + eps)).padStart (16, '0'));
+            const priceStr = price.toString ();
+            const pPrice = new Precise (priceStr);
+            const priceInternal = pPrice.mul (pPriceFactor).mul (pSettlement).div (pUnderlying).div (pOne, 0);
+            encodedPrice = this.base16ToBinary (this.intToBase16 (this.parseToInt (priceInternal.toString ())).padStart (16, '0'));
         }
         const message = this.binaryConcat (encodedNonce, encodedMarketId, encodedQuantity, encodedSide, encodedPrice, encodedFeeRate);
         return message;
@@ -667,29 +791,29 @@ export default class hibachi extends Exchange {
         await this.loadMarkets ();
         const market = this.market (symbol);
         const nonce = this.nonce ();
-        const fee_rate = Math.max (market.taker, market.maker);
-        let side_internal = '';
+        const feeRate = Math.max (market.taker, market.maker);
+        let sideInternal = '';
         if (side === 'sell') {
-            side_internal = 'ASK';
+            sideInternal = 'ASK';
         } else if (side === 'buy') {
-            side_internal = 'BID';
+            sideInternal = 'BID';
         }
-        let price_internal = '';
+        let priceInternal = '';
         if (price) {
-            price_internal = price.toString ();
+            priceInternal = price.toString ();
         }
-        const message = this.orderMessage (market, nonce, fee_rate, type, side, amount, price);
+        const message = this.orderMessage (market, nonce, feeRate, type, side, amount, price);
         const signature = this.signMessage (message, this.privateKey);
         const request = {
             'accountId': this.accountId,
             'symbol': market.id,
             'nonce': nonce,
-            'side': side_internal,
+            'side': sideInternal,
             'orderType': type.toUpperCase (),
             'quantity': amount.toString (),
-            'price': price_internal,
+            'price': priceInternal,
             'signature': signature,
-            'maxFeesPercent': fee_rate.toString (),
+            'maxFeesPercent': feeRate.toString (),
         };
         const response = await this.privatePostTradeOrder (request);
         //
@@ -722,8 +846,8 @@ export default class hibachi extends Exchange {
         await this.loadMarkets ();
         const market = this.market (symbol);
         const nonce = this.nonce ();
-        const fee_rate = Math.max (market.taker, market.maker);
-        const message = this.orderMessage (market, nonce, fee_rate, type, side, amount, price);
+        const feeRate = Math.max (market.taker, market.maker);
+        const message = this.orderMessage (market, nonce, feeRate, type, side, amount, price);
         const signature = this.signMessage (message, this.privateKey);
         const request = {
             'accountId': this.accountId,
@@ -731,7 +855,7 @@ export default class hibachi extends Exchange {
             'nonce': nonce,
             'updatedQuantity': amount.toString (),
             'updatedPrice': price.toString (),
-            'maxFeesPercent': fee_rate.toString (),
+            'maxFeesPercent': feeRate.toString (),
             'signature': signature,
         };
         await this.privatePutTradeOrder (request);
@@ -775,26 +899,221 @@ export default class hibachi extends Exchange {
         });
     }
 
+    withdrawMessage (amount: number, maxFees: number, address: string) {
+        // Converting them to internal representation:
+        // - Quantity: Internal = External * (10^6)
+        // - maxFees: Internal = External * (10^6)
+        // We only have USDT as our currency as this time
+        const USDTAssetId = 1;
+        const pUSDTFactor = new Precise ('1000000');
+        const amountStr = amount.toString ();
+        const maxFeesStr = maxFees.toString ();
+        const pOne = new Precise ('1');
+        const pAmount = new Precise (amountStr);
+        const pMaxFees = new Precise (maxFeesStr);
+        const quantityInternal = pAmount.mul (pUSDTFactor).div (pOne, 0);
+        const maxFeesInternal = pMaxFees.mul (pUSDTFactor).div (pOne, 0);
+        // Encoding
+        const encodedAssetId = this.base16ToBinary (this.intToBase16 (USDTAssetId).padStart (8, '0'));
+        const encodedQuantity = this.base16ToBinary (this.intToBase16 (this.parseToInt (quantityInternal.toString ())).padStart (16, '0'));
+        const encodedMaxFees = this.base16ToBinary (this.intToBase16 (this.parseToInt (maxFeesInternal.toString ())).padStart (16, '0'));
+        const encodedAddress = this.base16ToBinary (address);
+        const message = this.binaryConcat (encodedAssetId, encodedQuantity, encodedMaxFees, encodedAddress);
+        return message;
+    }
+
+    /**
+     * @method
+     * @name hibachi#withdraw
+     * @description make a withdrawal
+     * @see https://api-doc.hibachi.xyz/#6421625d-3e45-45fa-be9b-d2a0e780c090
+     * @param {string} code unified currency code, only support USDT
+     * @param {float} amount the amount to withdraw
+     * @param {string} address the address to withdraw to
+     * @param {string} tag
+     * @param {object} [params] extra parameters specific to the exchange API endpoint
+     * @returns {object} a [transaction structure]{@link https://docs.ccxt.com/#/?id=transaction-structure}
+     */
+    async withdraw (code: string, amount: number, address: string, tag = undefined, params = {}): Promise<Transaction> {
+        this.checkRequiredCredentials ();
+        const withdrawAddress = address.slice (-40);
+        // Get the withdraw fees
+        const exchangeInfo = await this.publicGetMarketExchangeInfo (params);
+        // {
+        //      "feeConfig": {
+        //          "depositFees": "0.004518",
+        //          "tradeMakerFeeRate": "0.00000000",
+        //          "tradeTakerFeeRate": "0.00020000",
+        //          "transferFeeRate": "0.00010000",
+        //          "withdrawalFees": "0.012050"
+        //    },
+        // }
+        const feeConfig = this.safeDict (exchangeInfo, 'feeConfig');
+        const maxFees = this.safeNumber (feeConfig, 'withdrawalFees');
+        // Generate the signature
+        const message = this.withdrawMessage (amount, maxFees, withdrawAddress);
+        const signature = this.signMessage (message, this.privateKey);
+        const request = {
+            'accountId': this.accountId,
+            'coin': 'USDT',
+            'network': 'ARBITRUM',
+            'withdrawAddress': withdrawAddress,
+            'selfWithdrawal': false,
+            'quantity': amount.toString (),
+            'maxFees': maxFees.toString (),
+            'signature': signature,
+        };
+        await this.privatePostCapitalWithdraw (request);
+        // At this time the response body is empty. A 200 response means the withdraw request is accepted and sent to process
+        //
+        // {}
+        //
+        return {
+            'info': undefined,
+            'id': undefined,
+            'txid': undefined,
+            'timestamp': this.milliseconds (),
+            'datetime': undefined,
+            'address': undefined,
+            'addressFrom': undefined,
+            'addressTo': withdrawAddress,
+            'tag': undefined,
+            'tagFrom': undefined,
+            'tagTo': undefined,
+            'type': 'deposit',
+            'amount': amount,
+            'currency': code,
+            'status': 'pending',
+            'fee': { 'currency': 'USDT', 'cost': maxFees },
+            'network': 'ARBITRUM',
+            'updated': undefined,
+            'comment': undefined,
+            'internal': undefined,
+        } as Transaction;
+    }
+
     nonce () {
         return this.milliseconds ();
     }
 
-    hashMessage (message) {
-        return this.hash (message, sha256, 'hex');
-    }
-
-    signHash (hash, privateKey) {
-        // We only support ECDSA signature for trustless account for now
-        // TODO: add support for HMAC signature for exchange managed account
-        const signature = ecdsa (hash.slice (-64), privateKey.slice (-64), secp256k1, undefined);
-        const r = signature['r'];
-        const s = signature['s'];
-        const v = signature['v'];
-        return r.padStart (64, '0') + s.padStart (64, '0') + v.toString (16).padStart (2, '0');
-    }
-
     signMessage (message, privateKey) {
-        return this.signHash (this.hashMessage (message), privateKey.slice (-64));
+        if (privateKey.length === 44) {
+            // For Exchange Managed account, the key length is 44 and we use HMAC to sign the message
+            return hmac (message, privateKey, sha256);
+        } else {
+            // For Trustless account, the key length is 66 including '0x' and we use ECDSA to sign the message
+            const hash = this.hash (message, sha256, 'hex');
+            const signature = ecdsa (hash.slice (-64), privateKey.slice (-64), secp256k1, undefined);
+            const r = signature['r'];
+            const s = signature['s'];
+            const v = signature['v'];
+            return r.padStart (64, '0') + s.padStart (64, '0') + v.toString (16).padStart (2, '0');
+        }
+    }
+
+    /**
+     * @method
+     * @name hibachi#fetchOrderBook
+     * @description fetches the state of the open orders on the orderbook
+     * @see https://api-doc.hibachi.xyz/#4abb30c4-e5c7-4b0f-9ade-790111dbfa47
+     * @param {string} symbol unified symbol of the market
+     * @param {int} [limit] currently unused
+     * @param {object} [params] extra parameters to be passed -- see documentation link above
+     * @returns {object} A dictionary containg [orderbook information]{@link https://docs.ccxt.com/#/?id=order-book-structure}
+     */
+    async fetchOrderBook (symbol: string, limit: Int = undefined, params = {}): Promise<OrderBook> {
+        await this.loadMarkets ();
+        const market: Market = this.market (symbol);
+        const request: Dict = {
+            'symbol': market['id'],
+        };
+        const response = await this.publicGetMarketDataOrderbook (this.extend (request, params));
+        const formattedResponse = {};
+        formattedResponse['ask'] = this.safeValue (this.safeValue (response, 'ask'), 'levels');
+        formattedResponse['bid'] = this.safeValue (this.safeValue (response, 'bid'), 'levels');
+        // {
+        //     "ask": {
+        //         "endPrice": "3512.63",
+        //         "levels": [
+        //             {
+        //                 "price": "3511.93",
+        //                 "quantity": "0.284772482"
+        //             },
+        //             {
+        //                 "price": "3512.28",
+        //                 "quantity": "0.569544964"
+        //             },
+        //             {
+        //                 "price": "3512.63",
+        //                 "quantity": "0.854317446"
+        //             }
+        //         ],
+        //         "startPrice": "3511.93"
+        //     },
+        //     "bid": {
+        //         "endPrice": "3510.87",
+        //         "levels": [
+        //             {
+        //                 "price": "3515.39",
+        //                 "quantity": "2.345153070"
+        //             },
+        //             {
+        //                 "price": "3511.22",
+        //                 "quantity": "0.284772482"
+        //             },
+        //             {
+        //                 "price": "3510.87",
+        //                 "quantity": "0.569544964"
+        //             }
+        //         ],
+        //         "startPrice": "3515.39"
+        //     }
+        // }
+        return this.parseOrderBook (formattedResponse, symbol, this.milliseconds (), 'bid', 'ask', 'price', 'quantity');
+    }
+
+    /**
+     * @method
+     * @name hibachi#fetchMyTrades
+     * @see https://api-doc.hibachi.xyz/#0adbf143-189f-40e0-afdc-88af4cba3c79
+     * @description fetch all trades made by the user
+     * @param {string} symbol unified market symbol
+     * @param {int} [since] the earliest time in ms to fetch trades for
+     * @param {int} [limit] the maximum number of trades structures to retrieve
+     * @param {object} [params] extra parameters specific to the exchange API endpoint
+     * @returns {Trade[]} a list of [trade structures]{@link https://docs.ccxt.com/#/?id=trade-structure}
+     */
+    async fetchMyTrades (symbol: Str = undefined, since: Int = undefined, limit: Int = undefined, params = {}) {
+        await this.loadMarkets ();
+        let market: Market = undefined;
+        if (symbol !== undefined) {
+            market = this.market (symbol);
+        }
+        const request = { 'accountId': this.accountId };
+        const response = await this.privateGetTradeAccountTrades (request);
+        //
+        // {
+        //     "trades": [
+        //         {
+        //             "askAccountId": 221,
+        //             "askOrderId": 589168494921909200,
+        //             "bidAccountId": 132,
+        //             "bidOrderId": 589168494829895700,
+        //             "fee": "0.000477",
+        //             "id": 199511136,
+        //             "orderType": "MARKET",
+        //             "price": "119257.90000",
+        //             "quantity": "0.0000200000",
+        //             "realizedPnl": "-0.000352",
+        //             "side": "Sell",
+        //             "symbol": "BTC/USDT-P",
+        //             "timestamp": 1752543391
+        //         }
+        //     ]
+        // }
+        //
+        const trades = this.safeList (response, 'trades');
+        return this.parseTrades (trades, market, since, limit, params);
     }
 
     sign (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {
@@ -816,5 +1135,38 @@ export default class hibachi extends Exchange {
             headers['Authorization'] = this.apiKey;
         }
         return { 'url': url, 'method': method, 'body': body, 'headers': headers };
+    }
+
+    derivePublicKeyFromPrivate () {
+        this.checkRequiredCredentials ();
+        return secp256k1.getPublicKey (this.privateKey.slice (-64), false).slice (1, 65);
+    }
+
+    /**
+     * @method
+     * @name hibachi#fetchDepositAddress
+     * @description fetch deposit address for given currency and chain. currently, we have a single EVM address across multiple EVM chains. Note: This method is currently only supported for trustless accounts
+     * @param {string} code unified currency code
+     * @param {object} [params] extra parameters for API
+     * @returns {object} an [address structure]{@link https://docs.ccxt.com/#/?id=address-structure}
+     */
+    async fetchDepositAddress (code: string, params = {}): Promise<DepositAddress> {
+        this.checkRequiredCredentials ();
+        const publicKey = this.derivePublicKeyFromPrivate ();
+        const request = {
+            'publicKey': '0x' + this.binaryToBase16 (publicKey),
+            'accountId': this.accountId,
+        };
+        const response = await this.privateGetCapitalDepositInfo (request);
+        // {
+        //     "depositAddressEvm": "0x0b95d90b9345dadf1460bd38b9f4bb0d2f4ed788"
+        // }
+        return {
+            'info': response,
+            'currency': 'USDT',
+            'network': 'ARBITRUM',
+            'address': this.safeString (response, 'depositAddressEvm'),
+            'tag': undefined,
+        };
     }
 }

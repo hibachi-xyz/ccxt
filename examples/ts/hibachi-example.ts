@@ -1,6 +1,22 @@
 import { hibachi } from '../../js/ccxt.js';
 import fs from 'fs';
 
+/*
+    In order to run the examples, you need to setup keys.local.json file like this:
+    ```
+    {
+        "hibachi": {
+            "accountId": 111,
+            "apiKey": "1111111111111111111111111111111111111111111=",
+            "privateKey": "0x1111111111111111111111111111111111111111111111111111111111111111",
+            "withdrawAddress": "0x1111111111111111111111111111111111111111"
+        }
+    }
+    ```
+    You can get the accountId, apiKey and privateKey from Hibachi App by creating an API key
+    Note: if you are using exchange managed account, the privateKey's length will be 44 instead
+    The withdrawAddress can be any ethereum wallet address, that is used to receive funds for withdraw tests
+*/
 async function example () {
     const keys = JSON.parse(fs.readFileSync('keys.local.json', 'utf-8'));
     const exchange = new hibachi (keys.hibachi);
@@ -19,7 +35,7 @@ async function example () {
     console.dir (balance, { depth: null, colors: true });
 
     const ticker = await exchange.fetchTicker('BTC/USDT:USDT');
-    console.log ('fetchTicket', ticker);
+    console.log ('fetchTicker', ticker);
 
     // createOrder, editOrder and cancelOrder
     const order1 = await exchange.createOrder('BTC/USDT:USDT', 'market', 'buy', 0.00002);
@@ -30,5 +46,19 @@ async function example () {
     const order5 = await exchange.cancelOrder(order3.id);
     console.log('create, edit and cancel limit order', order3.id, order4.id, order5.id);
     
+    const orderbook = await exchange.fetchOrderBook ('BTC/USDT:USDT');
+    console.log ('fetchOrderBook', orderbook);
+
+    const withdrawResponse = await exchange.withdraw('USDT', 0.02, keys.hibachi.withdrawAddress);
+    console.log(withdrawResponse);
+
+    const myTrades = await exchange.fetchMyTrades('BTC/USDT:USDT', undefined, 1);
+    console.log('fetchMyTrades', myTrades);
+
+    const tradingFees = await exchange.fetchTradingFees ();
+    console.log ('fetchTradingFees', tradingFees);
+
+    const depositAddress = await exchange.fetchDepositAddress ('USDT');
+    console.log ('fetchDepositAddress', depositAddress);
 }
 example ();
