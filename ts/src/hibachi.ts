@@ -616,11 +616,17 @@ export default class hibachi extends Exchange {
         }
         let timeInForce = 'GTC';
         const orderFlags = this.safeValue (order, 'orderFlags');
+        let postOnly = undefined;
+        let reduceOnly = undefined;
         if (orderFlags === 'PostOnly') {
             timeInForce = 'PO';
+            postOnly = true;
         } else if (orderFlags === 'Ioc') {
             timeInForce = 'IOC';
+        } else if (orderFlags === 'ReduceOnly') {
+            reduceOnly = true;
         }
+        const triggerPrice = this.safeString(order, 'triggerPrice');
         return this.safeOrder ({
             'id': this.safeString (order, 'orderId'),
             'clientOrderId': undefined,
