@@ -57,6 +57,9 @@ async function example () {
 
     const tradingFees = await exchange.fetchTradingFees ();
     console.log ('fetchTradingFees', tradingFees);
+    
+    const depositAddress = await exchange.fetchDepositAddress ('USDT');
+    console.log ('fetchDepositAddress', depositAddress);
 
     const openOrders = await exchange.fetchOpenOrders ();
     console.log ('fetchOpenOrders', openOrders);
