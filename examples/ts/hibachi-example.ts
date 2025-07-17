@@ -31,6 +31,12 @@ async function example () {
     const trades = await exchange.fetchTrades("BTC/USDT:USDT");
     console.log('fetchTrades', trades.length, trades[0]);
 
+    const tenMinutes = 10 * 60 * 1000;
+    const until = Date.now();
+    const since = until - tenMinutes;
+    const ohlcv = await exchange.fetchOHLCV('BTC/USDT:USDT', '5min', since, 100, {until});
+    console.log ('fetchOHLCV', ohlcv.length, ohlcv[0]);
+
     const balance = await exchange.fetchBalance();
     console.dir (balance, { depth: null, colors: true });
 
@@ -58,8 +64,14 @@ async function example () {
     const tradingFees = await exchange.fetchTradingFees ();
     console.log ('fetchTradingFees', tradingFees);
 
-    const depositAddress = await exchange.fetchDepositAddress ('USDT');
-    console.log ('fetchDepositAddress', depositAddress);
+    // Only run this for trustless account
+    if (exchange.privateKey.length !== 44) {
+        const depositAddress = await exchange.fetchDepositAddress ('USDT');
+        console.log ('fetchDepositAddress', depositAddress);
+    }
+
+    const ledger = await exchange.fetchLedger('USDT', undefined, 2);
+    console.log('fetchLedger', ledger);
 
     const deposits = await exchange.fetchDeposits ();
     console.log ('fetchDeposits', deposits);
