@@ -60,5 +60,11 @@ async function example () {
 
     const depositAddress = await exchange.fetchDepositAddress ('USDT');
     console.log ('fetchDepositAddress', depositAddress);
+
+    const deposits = await exchange.fetchDeposits ();
+    console.log ('fetchDeposits', deposits);
+
+    const withdrawals = await exchange.fetchWithdrawals ();
+    console.log ('fetchWithdrawals', withdrawals);
 }
 example ();
