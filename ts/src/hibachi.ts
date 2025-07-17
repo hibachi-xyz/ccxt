@@ -1346,7 +1346,7 @@ export default class hibachi extends Exchange {
      */
     async fetchDeposits (code: Str = undefined, since: Int = undefined, limit: Int = undefined, params = {}): Promise<Transaction[]> {
         this.checkRequiredCredentials ();
-        const currency = this.currency (code);
+        const currency = this.safeCurrency (code);
         const request = {
             'accountId': this.accountId,
         };
@@ -1406,7 +1406,7 @@ export default class hibachi extends Exchange {
      */
     async fetchWithdrawals (code: Str = undefined, since: Int = undefined, limit: Int = undefined, params = {}): Promise<Transaction[]> {
         this.checkRequiredCredentials ();
-        const currency = this.currency (code);
+        const currency = this.safeCurrency (code);
         const request = {
             'accountId': this.accountId,
         };
