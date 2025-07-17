@@ -1074,4 +1074,23 @@ export default class hibachi extends Exchange {
             'tag': undefined,
         };
     }
+
+    parseTransaction (transaction: Dict, currency: Currency = undefined) : Transaction {
+
+    }
+
+    /**
+     * @method
+     * @name hibachi#fetchDepositAddress
+     * @description fetch deposits made to account
+     * @see https://api-doc.hibachi.xyz/#35125e3f-d154-4bfd-8276-a48bb1c62020
+     * @param {string} [code] unified currency code
+     * @param {int} [since] filter by earliest timestamp (ms)
+     * @param {int} [limit] maximum number of deposits to be returned
+     * @param {object} [params] extra parameters to be passed to API
+     * @returns {object[]} a list of [transaction structures]{@link https://docs.ccxt.com/#/?id=transaction-structure}
+     */
+    async fetchDeposits (code: Str = undefined, since: Int = undefined, limit: Int = undefined, params = {}): Promise<Transaction[]> {
+        const response = 
+    }
 }
