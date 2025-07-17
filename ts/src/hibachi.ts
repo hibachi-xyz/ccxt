@@ -1382,7 +1382,7 @@ export default class hibachi extends Exchange {
         //         },
         //     ]
         // }
-        const transactions = this.safeDict (response, 'transactions');
+        const transactions = this.safeList (response, 'transactions');
         const deposits = [];
         for (let i = 0; i < transactions.length; i++) {
             const transaction = transactions[i];
@@ -1442,7 +1442,7 @@ export default class hibachi extends Exchange {
         //         },
         //     ]
         // }
-        const transactions = this.safeDict (response, 'transactions');
+        const transactions = this.safeList (response, 'transactions');
         const withdrawals = [];
         for (let i = 0; i < transactions.length; i++) {
             const transaction = transactions[i];
