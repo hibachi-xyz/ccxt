@@ -1333,9 +1333,36 @@ export default class hibachi extends Exchange {
         };
     }
 
+    parseTransaction (transaction: Dict, currency: Currency = undefined): Transaction {
+        const timestamp = this.safeNumber (transaction, 'timestampSec') * 1000;
+        const address = this.safeString (transaction, 'withdrawalAddress');
+        return {
+            'info': transaction,
+            'id': this.safeString (transaction, 'id'),
+            'txid': this.safeString (transaction, 'transactionHash'),
+            'timestamp': timestamp,
+            'datetime': this.iso8601 (timestamp),
+            'network': 'ARBITRUM', // Currently the exchange only exists on Arbitrum,
+            'address': address,
+            'addressTo': address,
+            'addressFrom': undefined,
+            'tag': undefined,
+            'tagTo': undefined,
+            'tagFrom': undefined,
+            'type': this.parseTransactionType (this.safeString (transaction, 'transactionType')),
+            'amount': this.safeNumber (transaction, 'quantity'),
+            'currency': 'USDT',
+            'status': this.parseTransactionStatus (this.safeString (transaction, 'status')),
+            'updated': undefined,
+            'internal': undefined,
+            'comment': undefined,
+            'fee': undefined,
+        };
+    }
+
     /**
      * @method
-     * @name hibachi#fetchDepositAddress
+     * @name hibachi#fetchDeposits
      * @description fetch deposits made to account
      * @see https://api-doc.hibachi.xyz/#35125e3f-d154-4bfd-8276-a48bb1c62020
      * @param {string} [code] unified currency code
