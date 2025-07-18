@@ -681,15 +681,16 @@ export default class hibachi extends Exchange {
         const orderFlags = this.safeValue (order, 'orderFlags');
         let postOnly = false;
         let reduceOnly = false;
-        if (orderFlags === 'PostOnly') {
+        if (orderFlags === 'POST_ONLY') {
             timeInForce = 'PO';
             postOnly = true;
-        } else if (orderFlags === 'Ioc') {
+        } else if (orderFlags === 'IOC') {
             timeInForce = 'IOC';
-        } else if (orderFlags === 'ReduceOnly') {
+        } else if (orderFlags === 'REDUCE_ONLY') {
             reduceOnly = true;
         }
         return this.safeOrder ({
+            'info': order,
             'id': this.safeString (order, 'orderId'),
             'clientOrderId': undefined,
             'datetime': undefined,
@@ -711,7 +712,7 @@ export default class hibachi extends Exchange {
             'fee': undefined,
             'reduceOnly': reduceOnly,
             'postOnly': postOnly,
-            'info': order,
+            'triggerPrice': this.safeNumber (order, 'triggerPrice'),
         }, market);
     }
 
@@ -1257,7 +1258,7 @@ export default class hibachi extends Exchange {
         return this.parseOrders (response, market, since, limit, params);
     }
 
-    /*
+    /**
      * @name hibachi#fetchOHLCV
      * @see  https://api-doc.hibachi.xyz/#4f0eacec-c61e-4d51-afb3-23c51c2c6bac
      * @description fetches historical candlestick data containing the close, high, low, open prices, interval and the volumeNotional
