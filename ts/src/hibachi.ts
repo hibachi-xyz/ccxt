@@ -68,7 +68,7 @@ export default class hibachi extends Exchange {
                 'fetchConvertQuote': false,
                 'fetchCurrencies': true,
                 'fetchDepositAddress': true,
-                'fetchDeposits': false,
+                'fetchDeposits': true,
                 'fetchDepositsWithdrawals': false,
                 'fetchFundingHistory': false,
                 'fetchFundingInterval': false,
@@ -105,7 +105,7 @@ export default class hibachi extends Exchange {
                 'fetchTradingLimits': false,
                 'fetchTransactions': 'emulated',
                 'fetchTransfers': false,
-                'fetchWithdrawals': false,
+                'fetchWithdrawals': true,
                 'reduceMargin': false,
                 'setLeverage': false,
                 'setMargin': false,
@@ -1218,7 +1218,7 @@ export default class hibachi extends Exchange {
         await this.loadMarkets ();
         const currency = this.currency ('USDT');
         const request = { 'accountId': this.accountId };
-        const responseCapitalHistory = await this.privateGetCapitalHistory (request);
+        const responseCapitalHistory = await this.privateGetCapitalHistory (this.extend (request, params));
         //
         // {
         //     "transactions": [
@@ -1377,7 +1377,7 @@ export default class hibachi extends Exchange {
         const request = {
             'accountId': this.accountId,
         };
-        const response = await this.privateGetCapitalHistory (request);
+        const response = await this.privateGetCapitalHistory (this.extend (request, params));
         // {
         //     "transactions": [
         //         {
