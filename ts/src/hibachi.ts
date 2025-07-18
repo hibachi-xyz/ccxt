@@ -1334,7 +1334,7 @@ export default class hibachi extends Exchange {
     }
 
     parseTransaction (transaction: Dict, currency: Currency = undefined): Transaction {
-        const timestamp = this.safeNumber (transaction, 'timestampSec') * 1000;
+        const timestamp = this.safeInteger (transaction, 'timestampSec') * 1000;
         const address = this.safeString (transaction, 'withdrawalAddress');
         let transactionType = this.safeString (transaction, 'transactionType');
         if (transactionType !== 'deposit' && transactionType !== 'withdrawal') {
