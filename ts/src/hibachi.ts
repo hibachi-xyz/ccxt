@@ -1336,6 +1336,10 @@ export default class hibachi extends Exchange {
     parseTransaction (transaction: Dict, currency: Currency = undefined): Transaction {
         const timestamp = this.safeNumber (transaction, 'timestampSec') * 1000;
         const address = this.safeString (transaction, 'withdrawalAddress');
+        let transactionType = this.safeString (transaction, 'transactionType');
+        if (transactionType !== 'deposit' && transactionType !== 'withdrawal') {
+            transactionType = this.parseTransactionType (transactionType);
+        }
         return {
             'info': transaction,
             'id': this.safeString (transaction, 'id'),
@@ -1349,7 +1353,7 @@ export default class hibachi extends Exchange {
             'tag': undefined,
             'tagTo': undefined,
             'tagFrom': undefined,
-            'type': this.parseTransactionType (this.safeString (transaction, 'transactionType')),
+            'type': transactionType,
             'amount': this.safeNumber (transaction, 'quantity'),
             'currency': 'USDT',
             'status': this.parseTransactionStatus (this.safeString (transaction, 'status')),
@@ -1437,7 +1441,7 @@ export default class hibachi extends Exchange {
         const request = {
             'accountId': this.accountId,
         };
-        const response = await this.privateGetCapitalHistory ( this.extend (request, params));
+        const response = await this.privateGetCapitalHistory (this.extend (request, params));
         // {
         //     "transactions": [
         //         {
