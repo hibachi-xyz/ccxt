@@ -1437,7 +1437,7 @@ export default class hibachi extends Exchange {
         const request = {
             'accountId': this.accountId,
         };
-        const response = await this.privateGetCapitalHistory (request);
+        const response = await this.privateGetCapitalHistory ( this.extend (request, params));
         // {
         //     "transactions": [
         //         {
